@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  password    String
+  level       Int      @default(1)
+  xp          Int      @default(0)
+  hp          Int      @default(100)
+  bounty      BigInt   @default(0)
+  berries     BigInt   @default(0)
+  fruit_name    String?
+  weapon_name   String?
+  accessory_name String?
+  haki        Boolean  @default(false)
+  fruit_rolls Int      @default(5)
+  world_progress Int   @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

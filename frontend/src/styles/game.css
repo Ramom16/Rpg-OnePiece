@@ -1,0 +1,307 @@
+/* Layout do Jogo e Content Container */
+.game-container {
+  padding: 20px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* Painel do Equipamento / HUD */
+.equipment-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  background-color: var(--bg-card);
+  padding: 15px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 20px;
+  justify-content: space-between;
+}
+
+/* Navegação por Abas */
+.tab-navigation {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.tab-button {
+  padding: 10px 18px;
+  background-color: var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+}
+
+.tab-button.active {
+  background-color: var(--accent-blue);
+  color: #fff;
+}
+
+/* Itens de Missão */
+.quest-card {
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.quest-card.legendary {
+  border-color: var(--accent-gold);
+}
+
+/* Grelha da Loja */
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* Roleta Gacha */
+.gacha-container {
+  text-align: center;
+  padding: 40px;
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+  background-color: var(--bg-card);
+}
+
+/* Histórico do Combate */
+.combat-log {
+  background-color: #0f172a;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  height: 130px;
+  overflow-y: auto;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 15px;
+  text-align: left;
+}
+
+.combat-log p:first-child {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+/* Seletor de Mundos (Blox Fruits) */
+.world-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.world-card {
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.world-card.active {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(17, 138, 178, 0.25);
+}
+
+.world-card.locked {
+  opacity: 0.7;
+}
+
+/* Card de Ilha (Acordeão) */
+.island-card {
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.island-card.expanded {
+  border-color: var(--accent-blue);
+}
+
+.island-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.island-header:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.island-toggle {
+  font-size: 18px;
+  color: var(--accent-blue);
+}
+
+.island-quests {
+  padding: 0 16px 14px 16px;
+}
+
+.island-quests .quest-card {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+}
+
+.island-quests .quest-card:last-child {
+  margin-bottom: 0;
+}
+
+.quest-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: var(--accent-blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Transição suave do card da Akuma no Mi */
+.fruit-reveal {
+  animation: fruit-reveal 0.6s ease-out;
+}
+
+@keyframes fruit-reveal {
+  0% {
+    transform: scale(0.85) translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Confetes de celebração */
+.confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2000;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  border-radius: 2px;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-5vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(115vh) rotate(720deg);
+    opacity: 0.9;
+  }
+}
+
+/* Números flutuantes de dano */
+.float-damage {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  font-weight: bold;
+  font-size: 20px;
+  color: #f87171;
+  pointer-events: none;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.85);
+  z-index: 5;
+  animation: float-up 0.95s ease-out forwards;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.8);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60px) scale(1.15);
+  }
+}
+
+/* Barra de progresso da jornada */
+.progress-journey {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.progress-journey-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.progress-journey-bar {
+  height: 8px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-journey-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* Indicador de auto-save */
+.saved-indicator {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 1500;
+  background-color: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: bold;
+  animation: saved-pop 0.2s ease-out;
+}
+
+@keyframes saved-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
