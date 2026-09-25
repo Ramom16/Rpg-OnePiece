@@ -8,10 +8,11 @@ const SPEEDS = [
   { label: "Instantâneo", ms: 300 },
 ];
 
-export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVictory, onDefeat }) {
+export default function RaidModal({ player, raid, totalAtk, playerMaxHp, onVictory, onDefeat }) {
+  const [waveIndex, setWaveIndex] = useState(0);
   const [playerHp, setPlayerHp] = useState(playerMaxHp ?? player.hp);
-  const [enemyHp, setEnemyHp] = useState(enemy.enemyHp || enemy.hp);
-  const [combatLog, setCombatLog] = useState(["Batalha iniciada!"]);
+  const [enemyHp, setEnemyHp] = useState(raid.waves[0].hp);
+  const [combatLog, setCombatLog] = useState(["☠️ Raid iniciada! Prepare-se para enfrentar todas as ondas."]);
   const [status, setStatus] = useState("waiting"); // waiting | player | enemy | finished
   const [result, setResult] = useState(null); // victory | defeat
   const [floats, setFloats] = useState([]);
@@ -23,9 +24,10 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
   const firstTurnRef = useRef(true);
   const floatIdRef = useRef(0);
 
-  const enemyMaxHp = enemy.enemyHp || enemy.hp;
-  const enemyAtk = enemy.enemyAtk || enemy.atk;
-  const enemyName = enemy.title || enemy.name;
+  const currentWave = raid.waves[waveIndex];
+  const waveHp = currentWave.hp;
+  const waveAtk = currentWave.atk;
+  const enemyName = currentWave.name;
 
   // HAKI: estado normalizado (compatível com saves antigos onde haki era boolean)
   const hakiState = player.haki && typeof player.haki === "object" ? player.haki : {};
@@ -33,7 +35,7 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
   const hakiObs = !!hakiState.observacao;
   const hakiRei = !!hakiState.rei;
 
-  // RAÇA: bônus passivos (totalAtk/playerMaxHp já chegam multiplicados pelo Game.jsx)
+  // RAÇA: bônus passivos
   const raceInfo = RACES.find((r) => r.name === player.race) || RACES[0];
   const raceDodge = raceInfo.dodgeChance || 0;
 
@@ -51,7 +53,38 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
     }, 950);
   }, []);
 
-  // LOOP DE COMBATE AUTOMÁTICO: joga primeiro, depois inimigo, alternando a cada cooldown
+  // ONDA LIMPA: cura entre rodadas ou vitória final
+  const handleWaveClear = useCallback((waveName, dmgText) => {
+    const isLast = waveIndex + 1 >= raid.waves.length;
+
+    if (isLast) {
+      setCombatLog((log) => [
+        `🎉 RAID COMPLETA! Todos os chefes foram derrotados!`,
+        `👑 ${waveName} derrotado (${dmgText} de dano)!`,
+        `🏆 Recompensas: 💰 ${raid.rewardBerries.toLocaleString()} Berries · ⭐ ${raid.rewardXp} XP · 🎲 +${raid.rewardRaceRolls} giro(s) de raça`,
+        ...log,
+      ]);
+      setStatus("finished");
+      setResult("victory");
+      return;
+    }
+
+    const heal = Math.floor(playerMaxHp * 0.5);
+    const nextWave = raid.waves[waveIndex + 1];
+
+    setPlayerHp(Math.min(playerMaxHp, playerHp + heal));
+    setCombatLog((log) => [
+      `✅ ${waveName} derrotado!`,
+      `❤️ [Intervalo] Você recuperou 50% de HP para a próxima rodada!`,
+      `☠️ Próxima rodada: ${nextWave.name} − HP ${nextWave.hp} · ATK ${nextWave.atk}`,
+      ...log,
+    ]);
+    setWaveIndex(waveIndex + 1);
+    setEnemyHp(nextWave.hp);
+    setStatus("enemy");
+  }, [waveIndex, playerHp, playerMaxHp, raid]);
+
+  // LOOP DE COMBATE AUTOMÁTICO DA RAID
   useEffect(() => {
     if (status === "finished") return;
 
@@ -61,20 +94,13 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
         if (hakiRei && firstTurnRef.current) {
           firstTurnRef.current = false;
           if (Math.random() < 0.3) {
-            const conquerorDamage = Math.floor(enemyMaxHp * 0.2);
+            const conquerorDamage = Math.floor(waveHp * 0.2);
             const newEnemyHp = Math.max(0, enemyHp - conquerorDamage);
             setEnemyHp(newEnemyHp);
             pushFloat("enemy", `-${conquerorDamage}`);
 
             if (newEnemyHp <= 0) {
-              setCombatLog((log) => [
-                `🎉 Vitória espetacular!`,
-                `👑 [Haki do Rei] A presença do Conquistador atordoou ${enemyName}!`,
-                `💥 Dano de Conquistador: ${conquerorDamage} de dano!`,
-                ...log,
-              ]);
-              setStatus("finished");
-              setResult("victory");
+              handleWaveClear(enemyName, `${conquerorDamage} de Dano de Conquistador`);
               return;
             }
 
@@ -95,9 +121,7 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
         pushFloat("enemy", `-${damage}`);
 
         if (newEnemyHp <= 0) {
-          setCombatLog((log) => [`🎉 Vitória espetacular!`, `⚔️ Você atacou e causou ${damage} de dano!`, ...log]);
-          setStatus("finished");
-          setResult("victory");
+          handleWaveClear(enemyName, String(damage));
           return;
         }
 
@@ -107,12 +131,9 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
         setCombatLog((log) => [attackLog, ...log]);
         setStatus("enemy");
       } else {
-        // 💨 ESQUIVA NATURAL DA RAÇA (ex.: Sereiano, Anão, Lunariano)
+        // 💨 ESQUIVA NATURAL DA RAÇA
         if (raceDodge > 0 && Math.random() * 100 < raceDodge) {
-          setCombatLog((log) => [
-            `💨 [Esquiva - ${raceInfo.name}] Você desviou do ataque!`,
-            ...log,
-          ]);
+          setCombatLog((log) => [`💨 [Esquiva - ${raceInfo.name}] Você desviou do ataque!`, ...log]);
           setStatus("player");
           return;
         }
@@ -124,14 +145,14 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
           return;
         }
 
-        let damage = Math.floor(enemyAtk * (0.8 + Math.random() * 0.4));
+        let damage = Math.floor(waveAtk * (0.8 + Math.random() * 0.4));
         if (hakiArm) damage = Math.floor(damage * 0.85);
         const newPlayerHp = Math.max(0, playerHp - damage);
         setPlayerHp(newPlayerHp);
         pushFloat("player", `-${damage}`);
 
         if (newPlayerHp <= 0) {
-          setCombatLog((log) => [`☠️ Você foi derrotado!`, `💥 O inimigo causou ${damage} de dano em você!`, ...log]);
+          setCombatLog((log) => [`☠️ Você foi derrotado...`, `💥 ${enemyName} causou ${damage} de dano em você!`, ...log]);
           setStatus("finished");
           setResult("defeat");
           return;
@@ -146,7 +167,7 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
     }, speed);
 
     return () => clearTimeout(timer);
-  }, [status, speed, totalAtk, enemyAtk, enemyHp, playerHp, pushFloat, hakiArm, hakiObs, hakiRei, enemyMaxHp, enemyName, raceDodge, raceInfo]);
+  }, [status, speed, totalAtk, waveAtk, enemyHp, playerHp, pushFloat, hakiArm, hakiObs, hakiRei, raceDodge, raceInfo, waveHp, enemyName, playerMaxHp, waveIndex, raid, handleWaveClear]);
 
   // FIM DA BATALHA: aguarda 1 segundo e executa o callback correspondente
   useEffect(() => {
@@ -154,12 +175,12 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
 
     const endTimer = setTimeout(() => {
       endedRef.current = true;
-      if (result === "victory") onVictory(enemy);
+      if (result === "victory") onVictory(raid);
       else onDefeat();
     }, END_DELAY);
 
     return () => clearTimeout(endTimer);
-  }, [status, result, enemy, onVictory, onDefeat]);
+  }, [status, result, raid, onVictory, onDefeat]);
 
   const turnLabel =
     status === "waiting" ? "⏳ Aguardando..." :
@@ -180,9 +201,12 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
       ));
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center" }}>
-      <div style={{ backgroundColor: "#0f172a", color: "#fff", padding: "25px", borderRadius: "10px", maxWidth: "640px", width: "90%", textAlign: "center" }}>
-        <h2>⚔️ Combate: {enemy.title || enemy.name}</h2>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.9)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1200 }}>
+      <div style={{ backgroundColor: "#0f172a", color: "#fff", padding: "25px", borderRadius: "10px", maxWidth: "680px", width: "92%", textAlign: "center" }}>
+        <h2>☠️ Raid: {raid.title}</h2>
+        <p style={{ fontSize: "13px", opacity: 0.8, margin: "6px 0" }}>
+          Onda {waveIndex + 1}/{raid.waves.length} · Recompensa: 💰 {raid.rewardBerries.toLocaleString()} Berries · ⭐ {raid.rewardXp} XP · 🎲 +{raid.rewardRaceRolls} giro(s) de raça
+        </p>
 
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "10px", margin: "12px 0" }}>
           <span style={{ fontSize: "13px", opacity: 0.8 }}>⚡ Velocidade:</span>
@@ -215,9 +239,9 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
           </div>
           <div style={{ flex: 1, position: "relative", backgroundColor: "#1e293b", borderRadius: "8px", padding: "14px" }}>
             {renderFloats("enemy")}
-            <h4>👹 {enemy.title || enemy.name}</h4>
-            <p>❤️ Vida: {enemyHp}/{enemyMaxHp}</p>
-            <p>⚔️ Ataque: {enemyAtk}</p>
+            <h4>👹 {enemyName}</h4>
+            <p>❤️ Vida: {enemyHp}/{waveHp}</p>
+            <p>⚔️ Ataque: {waveAtk}</p>
           </div>
         </div>
 
@@ -232,10 +256,10 @@ export default function CombatModal({ player, enemy, totalAtk, playerMaxHp, onVi
             color: "#fff",
           }}
         >
-          {status === "finished" ? (result === "victory" ? "🎉 Vitória!" : "☠️ Derrota...") : turnLabel}
+          {status === "finished" ? (result === "victory" ? "🎉 Raid Concluída!" : "☠️ Raid Falhou...") : turnLabel}
         </div>
 
-        <div style={{ marginTop: "20px", height: "120px", overflowY: "auto", border: "1px solid #334155", padding: "10px", textAlign: "left", fontSize: "14px", backgroundColor: "#1e293b" }}>
+        <div style={{ marginTop: "20px", height: "140px", overflowY: "auto", border: "1px solid #334155", padding: "10px", textAlign: "left", fontSize: "14px", backgroundColor: "#1e293b" }}>
           {combatLog.map((log, index) => (
             <p key={index} style={{ margin: "3px 0" }}>{log}</p>
           ))}

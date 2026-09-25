@@ -10,6 +10,7 @@ datasource db {
 model Player {
   id          Int      @id @default(autoincrement())
   username    String   @unique
+  nickname    String   @default("")
   password    String
   level       Int      @default(1)
   xp          Int      @default(0)
@@ -19,9 +20,18 @@ model Player {
   fruit_name    String?
   weapon_name   String?
   accessory_name String?
-  haki        Boolean  @default(false)
+  haki        Json?
+  race        String?
+  race_rolls  Int      @default(3)
   fruit_rolls Int      @default(5)
+  refine_weapon    Int      @default(0)
+  refine_accessory Int      @default(0)
+  fruit_awakened   Boolean  @default(false)
+  training_atk     Int      @default(0)
+  training_hp      Int      @default(0)
   world_progress Int   @default(1)
+  unlocked_titles Json?
+  equipped_title String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

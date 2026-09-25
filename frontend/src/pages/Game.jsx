@@ -1,17 +1,89 @@
 import React, { useState, useRef } from "react";
 import Navbar from "../components/Navbar";
 import CombatModal from "../components/CombatModal";
+import RaidModal from "../components/RaidModal";
 import QuizModal from "../components/QuizModal";
+import { useToast } from "../components/toastContext";
+import FruitImage from "../components/FruitImage";
 import { WORLDS, SIDE_QUESTS, LEGENDARY_WEAPON_QUESTS } from "../data/quests";
 import { WEAPONS } from "../data/weapons";
 import { FRUITS } from "../data/fruits";
 import { ACCESSORIES } from "../data/accessories";
+import { RACES } from "../data/races";
+import { RAIDS } from "../data/raids";
+import { TITLES } from "../data/titles";
 import API from "../services/api";
 
 const MAX_LEVEL = 50;
 const xpToNext = (level) => 100 + level * 20;
 
 const SEA_ORDER = ["Mundo 1", "Mundo 2", "Mundo 3"];
+
+// ==================== MENU DE NAVEGAÇÃO (AGRUPADO POR CATEGORIA) ====================
+const NAV_GROUPS = [
+  {
+    label: "🗺️ Mundo",
+    items: [
+      { key: "story", icon: "🌍", label: "Explorar Mares" },
+      { key: "side", icon: "💰", label: "Caças" },
+      { key: "raids", icon: "☠️", label: "Raids" },
+    ],
+  },
+  {
+    label: "⚔️ Equipamento",
+    items: [
+      { key: "shop", icon: "🛒", label: "Loja de Espadas" },
+      { key: "accessories", icon: "💍", label: "Acessórios" },
+      { key: "legendary", icon: "🗡️", label: "Armas Lendárias" },
+    ],
+  },
+  {
+    label: "🧘 Evolução",
+    items: [
+      { key: "haki", icon: "🧘", label: "Haki" },
+      { key: "race", icon: "🧬", label: "Raça" },
+      { key: "gacha", icon: "🎲", label: "Roleta de Frutas" },
+    ],
+  },
+  {
+    label: "🏆 Conquistas",
+    items: [{ key: "titles", icon: "🏆", label: "Títulos" }],
+  },
+];
+
+// ==================== SISTEMA DE HAKI ====================
+const DEFAULT_HAKI = { armamento: false, observacao: false, rei: false };
+
+const HAKI_TRAINING = [
+  {
+    key: "armamento",
+    icon: "🖤",
+    name: "Haki do Armamento",
+    reqLevel: 15,
+    cost: 50000,
+    effects: ["+25% de dano físico/espada", "+15% de resistência (reduz o dano recebido)"],
+  },
+  {
+    key: "observacao",
+    icon: "👁️",
+    name: "Haki da Observação",
+    reqLevel: 25,
+    cost: 150000,
+    effects: ["20% de chance de Esquiva Perfeita (anula completamente o dano do turno)"],
+  },
+  {
+    key: "rei",
+    icon: "👑",
+    name: "Haki do Rei",
+    reqLevel: 35,
+    bossRequirement: true,
+    cost: 0,
+    effects: [
+      "30% de chance no 1º turno de paralisar/atordoar o inimigo por 1 turno",
+      "Causa 20% do HP do inimigo como Dano de Conquistador",
+    ],
+  },
+];
 
 // COMPARADOR DE STATUS ENTRE ITEM DA LOJA E ITEM EQUIPADO
 function StatDiff({ label, diff, unit }) {
@@ -26,11 +98,47 @@ function StatDiff({ label, diff, unit }) {
   );
 }
 
-// Sorteio (impuro) isolado no escopo do módulo — fora do corpo do componente
-function pickRandomFruit() {
-  const idx = Math.floor(Math.random() * FRUITS.length);
-  return FRUITS[idx];
+// TÍTULOS QUE SÃO LIBERADOS AO VENCER RAIDS ESPECÍFICAS
+const RAID_TITLE_REWARDS = {
+  shichibukai_lineup: "shichibukai",
+  beast_pirates: "yonkou",
+  roger_pirates: "pirate_king",
+};
+
+// Sorteio ponderado genérico (impuro) isolado no escopo do módulo — fora do corpo do componente
+function pickWeighted(items, weights) {
+  const total = weights.reduce((acc, w) => acc + w, 0);
+  let roll = Math.random() * total;
+  for (let i = 0; i < items.length; i += 1) {
+    roll -= weights[i];
+    if (roll <= 0) return items[i];
+  }
+  return items[items.length - 1];
 }
+
+// Peso base por raridade de Fruta (fração das roletas)
+const FRUIT_BASE_WEIGHTS = { Comum: 100, Rara: 45, Épica: 15, Lendária: 5 };
+
+// Sorteio de fruta ponderado pela raridade, com bônus de sorte do título equipado
+function pickRandomFruit(luckMultiplier = 1) {
+  const weights = FRUITS.map((fruit) => {
+    const base = FRUIT_BASE_WEIGHTS[fruit.rarity] ?? 10;
+    const boost = fruit.rarity === "Épica" || fruit.rarity === "Lendária" ? luckMultiplier : 1;
+    return base * boost;
+  });
+  return pickWeighted(FRUITS, weights);
+}
+
+// Sorteio de raça ponderado pelas porcentagens (chance) de RACES, com bônus de sorte
+function pickRandomRace(luckMultiplier = 1) {
+  const weights = RACES.map((race) => {
+    const boost = race.rarity === "Épica" || race.rarity === "Lendária" ? luckMultiplier : 1;
+    return race.chance * boost;
+  });
+  return pickWeighted(RACES, weights);
+}
+
+const RACE_ROLL_COST = 20000;
 
 const CONFETTI_COLORS = ["#f59e0b", "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#eab308", "#ec4899"];
 
@@ -51,6 +159,7 @@ export default function Game({ player, setPlayer, onLogout }) {
   const [expandedIsland, setExpandedIsland] = useState(WORLDS[0].islands[0].id);
   const [activeCombat, setActiveCombat] = useState(null);
   const [activeQuiz, setActiveQuiz] = useState(null);
+  const [activeRaid, setActiveRaid] = useState(null);
   const [message, setMessage] = useState("");
 
   // ESTADOS DA ROLETA DE AKUMA NO MI
@@ -58,45 +167,103 @@ export default function Game({ player, setPlayer, onLogout }) {
   const [confetti, setConfetti] = useState([]);
   const [gachaAnimKey, setGachaAnimKey] = useState(0);
 
+  // ESTADOS DA ROLETA DE RAÇAS
+  const [raceRevealKey, setRaceRevealKey] = useState(0);
+
   // AUTO-SAVE SILENCIOSO
   const [savedFlash, setSavedFlash] = useState(false);
   const savedFlashTimerRef = useRef(null);
 
-  // ESTADOS DA NOTIFICAÇÃO DE LEVEL UP
-  const [levelToast, setLevelToast] = useState(null);
-  const toastTimeoutRef = useRef(null);
+  // NOTIFICAÇÕES TOAST (canto inferior esquerdo, não-bloqueante)
+  const { showToast } = useToast();
 
-  // Função para acionar o Toast sobrescrevendo o anterior
-  const triggerLevelToast = (newLevel, extraRolls = 0) => {
-    // Se houver um timer rodando, cancela imediatamente
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
+  // ===== NOME DE PIRATA PERSONALIZÁVEL =====
+  const pirateNickname = player.nickname || player.username || "Pirata Sem Nome";
+  const xpPercent = (player.xp / xpToNext(player.level)) * 100;
+
+  // Salvar novo nome de pirata (persistência via persistPlayer → localStorage + API)
+  const saveNickname = (newName) => {
+    const trimmed = (newName || "").trim().slice(0, 24);
+    if (!trimmed) {
+      showToast("⚠️ O nome de pirata não pode estar vazio!", "warning");
+      return false;
     }
+    const nextPlayer = { ...player, nickname: trimmed };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`🏴‍☠️ Agora você é conhecido como "${trimmed}"!`, "success");
+    return true;
+  };
 
-    // Sobrescreve a notificação atual
+  // Função para acionar o Toast de Level Up
+  const triggerLevelToast = (newLevel, extraRolls = 0) => {
     const rollText = extraRolls > 0 ? ` · +${extraRolls} giro(s) de fruta!` : "";
-    setLevelToast(`🎉 Nível ${newLevel} Alcançado!${rollText}`);
-
-    // Inicia um novo contador de 3 segundos
-    toastTimeoutRef.current = setTimeout(() => {
-      setLevelToast(null);
-    }, 3000);
+    showToast(`🎉 Nível ${newLevel} Alcançado!${rollText}`, "success");
   };
 
   const currentWeapon = WEAPONS.find((w) => w.name === player.weapon_name);
   const currentFruit = FRUITS.find((f) => f.name === player.fruit_name);
   const currentAccessory = ACCESSORIES.find((a) => a.name === player.accessory_name);
+  const raceRolls = player.race_rolls ?? 3;
+  const currentRace = RACES.find((r) => r.name === player.race) || RACES[0];
+  const avatarIcon = currentRace.icon || "🏴‍☠️";
+
+  // ===== SISTEMA DE TÍTULOS (bônus de sorte nos gachas) =====
+  const unlockedTitles = Array.isArray(player.unlocked_titles) ? player.unlocked_titles : ["rookie"];
+  const equippedTitle = player.equipped_title || "rookie";
+  const currentTitle = TITLES.find((t) => t.id === equippedTitle) || TITLES[0];
+  const luckMultiplier = 1 + (currentTitle.luckBonus || 0) / 100;
+  const titleTag = `${currentTitle.icon} ${currentTitle.name}`;
+
+  // Equipar um título desbloqueado (persistência via persistPlayer)
+  const equipTitle = (titleId) => {
+    if (!unlockedTitles.includes(titleId)) {
+      showToast("🔒 Título ainda não desbloqueado!", "warning");
+      return;
+    }
+    if (equippedTitle === titleId) return;
+    const title = TITLES.find((t) => t.id === titleId);
+    const nextPlayer = { ...player, equipped_title: titleId };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`🏆 Título equipado: ${title.icon} ${title.name}!`, "success");
+  };
+
+  // ENHANCE DE ENDGAME: refino de equipamentos, despertar de fruta e treinamento de status
+  const refineWeaponLevel = player.refine_weapon ?? 0;
+  const refineAccessoryLevel = player.refine_accessory ?? 0;
+  const fruitAwakened = !!player.fruit_awakened;
+  const trainingAtk = player.training_atk ?? 0;
+  const trainingHp = player.training_hp ?? 0;
 
   const weaponAtk = currentWeapon ? currentWeapon.atk : 0;
-  const fruitAtk = currentFruit ? currentFruit.bonusAtk : 0;
-  const fruitBonusHp = currentFruit ? currentFruit.bonusHp : 0;
-  const accessoryBonusHp = currentAccessory ? currentAccessory.bonusHp : 0;
-  const accessoryWeaponBoost = currentAccessory ? currentAccessory.weaponAtkBoost : 0;
-  const accessoryFruitBoost = currentAccessory ? currentAccessory.fruitAtkBoost : 0;
-  const totalAtk = 20 + player.level * 5 + weaponAtk + accessoryWeaponBoost + fruitAtk + accessoryFruitBoost;
-  const totalHp = 100 + player.level * 10 + fruitBonusHp + accessoryBonusHp;
+  const fruitAtkBase = currentFruit ? currentFruit.bonusAtk : 0;
+  const fruitHpBase = currentFruit ? currentFruit.bonusHp : 0;
+  const accessoryHpBase = currentAccessory ? currentAccessory.bonusHp : 0;
+  const accessoryWeaponBase = currentAccessory ? currentAccessory.weaponAtkBoost : 0;
+  const accessoryFruitBase = currentAccessory ? currentAccessory.fruitAtkBoost : 0;
 
-  // ============ NAVEGAÇÃO ENTRE MUNDOS (BLOX FRUITS) ============
+  const fruitMult = fruitAwakened ? 10 : 1;
+  const weaponRefineMult = 1 + refineWeaponLevel * 0.15;
+  const accessoryRefineMult = 1 + refineAccessoryLevel * 0.15;
+
+  const fruitAtk = fruitAtkBase * fruitMult;
+  const fruitBonusHp = fruitHpBase * fruitMult;
+  const accessoryBonusHp = accessoryHpBase * accessoryRefineMult;
+  const accessoryWeaponBoost = accessoryWeaponBase * accessoryRefineMult;
+  const accessoryFruitBoost = accessoryFruitBase * accessoryRefineMult;
+  const boostedWeaponAtk = weaponAtk * weaponRefineMult;
+
+  const baseAtk = 20 + player.level * 5 + trainingAtk + boostedWeaponAtk + accessoryWeaponBoost + fruitAtk + accessoryFruitBoost;
+  const baseHp = 100 + player.level * 10 + trainingHp + fruitBonusHp + accessoryBonusHp;
+  const totalAtk = Math.floor(baseAtk * currentRace.atkMultiplier);
+  const totalHp = Math.floor(baseHp * currentRace.hpMultiplier);
+
+  // HAKI: estado normalizado (compatível com saves antigos onde haki era boolean)
+  const haki = {
+    ...DEFAULT_HAKI,
+    ...(player.haki && typeof player.haki === "object" ? player.haki : {}),
+  };
   const worldProgress = player.world_progress || 1;
   const world2Unlocked = player.level >= 15 && worldProgress >= 2;
   const world3Unlocked = player.level >= 30 && worldProgress >= 3;
@@ -111,10 +278,11 @@ export default function Game({ player, setPlayer, onLogout }) {
   const selectWorld = (worldIndex) => {
     const world = WORLDS[worldIndex];
     if (!canAccessWorld(worldIndex)) {
-      alert(
+      showToast(
         world.id === "world2"
           ? "🌊 Mundo 2 bloqueado! Alcance o Nível 15 e derrote Doflamingo em Dressrosa."
-          : "🌊 Mundo 3 bloqueado! Alcance o Nível 30 e derrote Kaido em Wano."
+          : "🌊 Mundo 3 bloqueado! Alcance o Nível 30 e derrote Kaido em Wano.",
+        "warning"
       );
       return;
     }
@@ -140,7 +308,7 @@ export default function Game({ player, setPlayer, onLogout }) {
 
   const startQuest = (island, quest) => {
     if (player.level < island.minLevel) {
-      alert(`Você precisa ser Nível ${island.minLevel} para acessar ${island.name}!`);
+      showToast(`Você precisa ser Nível ${island.minLevel} para acessar ${island.name}!`, "warning");
       return;
     }
     setActiveCombat({ ...quest, islandName: island.name });
@@ -148,7 +316,7 @@ export default function Game({ player, setPlayer, onLogout }) {
 
   const startLegendaryQuest = (quest) => {
     if (player.level < quest.minLevel) {
-      alert(`Nível insuficiente! Requer Nível ${quest.minLevel}.`);
+      showToast(`Nível insuficiente! Requer Nível ${quest.minLevel}.`, "warning");
       return;
     }
     setActiveQuiz(quest);
@@ -169,7 +337,7 @@ export default function Game({ player, setPlayer, onLogout }) {
       const rewardWeaponObj = WEAPONS.find((w) => w.id === enemy.weaponReward);
       if (rewardWeaponObj) {
         newWeapon = rewardWeaponObj.name;
-        alert(`🏆 Você obteve a lendária espada: ${rewardWeaponObj.name}!`);
+        showToast(`🏆 Você obteve a lendária espada: ${rewardWeaponObj.name}!`, "success");
       }
     }
 
@@ -190,11 +358,11 @@ export default function Game({ player, setPlayer, onLogout }) {
     if (enemy.unlockWorld && newWorldProgress < enemy.unlockWorld) {
       newWorldProgress = enemy.unlockWorld;
       const unlocked = WORLDS[enemy.unlockWorld - 1];
-      alert(`🌊 ${unlocked.name} (${unlocked.subtitle}) desbloqueado! Navegue para explorá-lo.`);
+      showToast(`🌊 ${unlocked.name} (${unlocked.subtitle}) desbloqueado! Navegue para explorá-lo.`, "success");
     }
 
     if (enemy.finalBoss) {
-      alert("🏆 PARABÉNS! Você derrotou o Lorde Supremo de Elbaf e ZEROU o RPG One Piece!");
+      showToast("🏆 PARABÉNS! Você derrotou o Lorde Supremo de Elbaf e ZEROU o RPG One Piece!", "success");
     }
 
     const nextPlayer = {
@@ -213,17 +381,18 @@ export default function Game({ player, setPlayer, onLogout }) {
 
   const buyWeapon = (weapon) => {
     if (player.berries < weapon.price) {
-      alert("Berries insuficientes para comprar esta espada!");
+      showToast("Berries insuficientes para comprar esta espada!", "warning");
       return;
     }
     const nextPlayer = {
       ...player,
       berries: player.berries - weapon.price,
       weapon_name: weapon.name,
+      refine_weapon: 0,
     };
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
-    alert(`Você comprou e equipou a espada ${weapon.name}!`);
+    showToast(`Você comprou e equipou a espada ${weapon.name}!`, "success");
   };
 
   const triggerConfetti = () => {
@@ -238,13 +407,14 @@ export default function Game({ player, setPlayer, onLogout }) {
       return;
     }
 
-    const rolledFruit = pickRandomFruit();
+    const rolledFruit = pickRandomFruit(luckMultiplier);
 
     const nextPlayer = {
       ...player,
       fruit_rolls: player.fruit_rolls - 1,
       fruit_name: rolledFruit.name,
-      hp: 100 + player.level * 10 + rolledFruit.bonusHp + accessoryBonusHp,
+      fruit_awakened: false,
+      hp: Math.floor((100 + player.level * 10 + rolledFruit.bonusHp + accessoryBonusHp) * currentRace.hpMultiplier),
     };
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
@@ -274,18 +444,250 @@ export default function Game({ player, setPlayer, onLogout }) {
 
   const buyAccessory = (accessory) => {
     if (player.berries < accessory.price) {
-      alert("Berries insuficientes para comprar este acessório!");
+      showToast("Berries insuficientes para comprar este acessório!", "warning");
       return;
     }
     const nextPlayer = {
       ...player,
       berries: player.berries - accessory.price,
       accessory_name: accessory.name,
-      hp: 100 + player.level * 10 + fruitBonusHp + accessory.bonusHp,
+      refine_accessory: 0,
+      hp: Math.floor((100 + player.level * 10 + fruitBonusHp + accessory.bonusHp) * currentRace.hpMultiplier),
     };
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
-    alert(`Você comprou e equipou o acessório ${accessory.name}!`);
+    showToast(`Você comprou e equipou o acessório ${accessory.name}!`, "success");
+  };
+
+  // DESPERTAR HAKI
+  const awakenHaki = (hakiType, cost, label) => {
+    if (haki[hakiType]) {
+      showToast(`${label} já está despertado!`, "warning");
+      return;
+    }
+    if (player.berries < cost) {
+      showToast("Berries insuficientes para despertar este Haki!", "warning");
+      return;
+    }
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - cost,
+      haki: { ...haki, [hakiType]: true },
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`✨ ${label} despertado! Seu poder de vontade fortalecerá seu combate.`, "info");
+  };
+
+  // ⛏️ REFINAR ESPADA EQUIPADA (+1 a +10, cada nível = +15% do ATK base)
+  const refineWeapon = () => {
+    if (!currentWeapon) {
+      showToast("Nenhuma espada equipada para refinar!", "warning");
+      return;
+    }
+    if (refineWeaponLevel >= 10) {
+      showToast("Sua espada já está no nível máximo +10!", "info");
+      return;
+    }
+    const cost = (refineWeaponLevel + 1) * 50000;
+    if (player.berries < cost) {
+      showToast(`Berries insuficientes! Refinar para +${refineWeaponLevel + 1} custa ${cost.toLocaleString()} Berries.`, "warning");
+      return;
+    }
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - cost,
+      refine_weapon: refineWeaponLevel + 1,
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`⛏️ ${currentWeapon.name} refinada para +${refineWeaponLevel + 1}! (ATK agora +${Math.round(weaponAtk * (1 + (refineWeaponLevel + 1) * 0.15))})`, "success");
+  };
+
+  // ⛏️ REFINAR ACESSÓRIO EQUIPADO (+1 a +10, cada nível = +15% dos atributos base)
+  const refineAccessory = () => {
+    if (!currentAccessory) {
+      showToast("Nenhum acessório equipado para refinar!", "warning");
+      return;
+    }
+    if (refineAccessoryLevel >= 10) {
+      showToast("Seu acessório já está no nível máximo +10!", "info");
+      return;
+    }
+    const cost = (refineAccessoryLevel + 1) * 50000;
+    if (player.berries < cost) {
+      showToast(`Berries insuficientes! Refinar para +${refineAccessoryLevel + 1} custa ${cost.toLocaleString()} Berries.`, "warning");
+      return;
+    }
+    const nextAccMult = 1 + (refineAccessoryLevel + 1) * 0.15;
+    const nextBonusHp = accessoryHpBase * nextAccMult;
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - cost,
+      refine_accessory: refineAccessoryLevel + 1,
+      hp: Math.floor((100 + player.level * 10 + trainingHp + fruitBonusHp + nextBonusHp) * currentRace.hpMultiplier),
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`⛏️ ${currentAccessory.name} refinado para +${refineAccessoryLevel + 1}! (Bônus +15% adicionais)`, "success");
+  };
+
+  // ⚡ DESPERTAR AKUMA NO MI (Nível 40+ e 500.000 Berries → bônus ×10)
+  const awakenFruit = () => {
+    if (!currentFruit) {
+      showToast("Você precisa estar com uma Akuma no Mi equipada!", "warning");
+      return;
+    }
+    if (fruitAwakened) {
+      showToast(`${currentFruit.name} já está despertada!`, "warning");
+      return;
+    }
+    if (player.level < 40) {
+      showToast("Requer Nível 40 para despertar a Akuma no Mi!", "warning");
+      return;
+    }
+    if (player.berries < 500000) {
+      showToast("Berries insuficientes! Despertar custa 500.000 Berries.", "warning");
+      return;
+    }
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - 500000,
+      fruit_awakened: true,
+      hp: Math.floor((100 + player.level * 10 + trainingHp + fruitHpBase * 10 + accessoryBonusHp) * currentRace.hpMultiplier),
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    triggerConfetti();
+    showToast(`✨ ${currentFruit.name} despertada! Bônus de ATK e HP multiplicados por 10.`, "success");
+  };
+
+  // 💪 TREINAR FORÇA: +100 ATK Base permanente (30.000 Berries)
+  const trainStrength = () => {
+    if (player.berries < 30000) {
+      showToast("Berries insuficientes! O treino de Força custa 30.000 Berries.", "warning");
+      return;
+    }
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - 30000,
+      training_atk: trainingAtk + 100,
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`💪 Força treinada! +100 ATK Base permanente (total de treino: +${trainingAtk + 100} ATK)`, "info");
+  };
+
+  // ❤️ TREINAR VITALIDADE: +350 HP Base permanente (30.000 Berries)
+  const trainVitality = () => {
+    if (player.berries < 30000) {
+      showToast("Berries insuficientes! O treino de Vitalidade custa 30.000 Berries.", "warning");
+      return;
+    }
+    const nextPlayer = {
+      ...player,
+      berries: player.berries - 30000,
+      training_hp: trainingHp + 350,
+      hp: Math.floor((100 + player.level * 10 + trainingHp + 350 + fruitBonusHp + accessoryBonusHp) * currentRace.hpMultiplier),
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`❤️ Vitalidade treinada! +350 HP Base permanente (total de treino: +${trainingHp + 350} HP)`, "info");
+  };
+
+  // GIRAR ROLETA DE RAÇAS (1 giro grátis ou 20.000 Berries)
+  const doRollRace = () => {
+    let nextRolls = raceRolls;
+    let nextBerries = player.berries;
+
+    if (nextRolls > 0) {
+      nextRolls -= 1;
+    } else if (nextBerries >= RACE_ROLL_COST) {
+      nextBerries -= RACE_ROLL_COST;
+    } else {
+      setMessage("❌ Sem giros de raça! Você precisa pagar 20.000 Berries para girar.");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    const rolledRace = pickRandomRace(luckMultiplier);
+
+    const nextPlayer = {
+      ...player,
+      race: rolledRace.name,
+      race_rolls: nextRolls,
+      berries: nextBerries,
+      hp: Math.floor((100 + player.level * 10 + fruitBonusHp + accessoryBonusHp) * rolledRace.hpMultiplier),
+    };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+
+    setRaceRevealKey((k) => k + 1);
+
+    if (rolledRace.rarity === "Lendária") {
+      triggerConfetti();
+    }
+
+    setMessage(rolledRace.name === "Humano" ? "🫥 Você sorteou Humano... que azar!" : `🎲 Nova raça: ${rolledRace.icon} ${rolledRace.name}!`);
+    setTimeout(() => setMessage(""), 3500);
+  };
+
+  // INICIAR RAID
+  const startRaid = (raid) => {
+    if (player.level < raid.minLevel) {
+      showToast(`Nível insuficiente! Esta Raid requer Nível ${raid.minLevel}.`, "warning");
+      return;
+    }
+    setActiveRaid(raid);
+  };
+
+  // VITÓRIA NA RAID: entrega Berries, XP e Giros de Raça bônus
+  const handleRaidVictory = (raid) => {
+    setActiveRaid(null);
+
+    let newBerries = player.berries + raid.rewardBerries;
+    let newXp = player.xp + raid.rewardXp;
+    let newLevel = player.level;
+    let newFruitRolls = player.fruit_rolls;
+    let newRaceRolls = raceRolls + raid.rewardRaceRolls;
+
+    let levelsGained = 0;
+    while (newLevel < MAX_LEVEL && newXp >= xpToNext(newLevel)) {
+      newXp -= xpToNext(newLevel);
+      newLevel += 1;
+      levelsGained += 1;
+      newFruitRolls += 1;
+    }
+
+    if (levelsGained > 0) {
+      triggerLevelToast(newLevel, levelsGained);
+    }
+
+    const nextPlayer = {
+      ...player,
+      berries: newBerries,
+      xp: newXp,
+      level: newLevel,
+      fruit_rolls: newFruitRolls,
+      race_rolls: newRaceRolls,
+      hp: totalHp,
+    };
+
+    // DESBLOQUEIO DE TÍTULOS POR RAID VENCIDA
+    let finalPlayer = nextPlayer;
+    const titleId = RAID_TITLE_REWARDS[raid.id];
+    if (titleId && !unlockedTitles.includes(titleId)) {
+      const unlocked = TITLES.find((t) => t.id === titleId);
+      finalPlayer = { ...nextPlayer, unlocked_titles: [...unlockedTitles, titleId] };
+      showToast(`🏆 Novo Título Desbloqueado: ${unlocked.icon} ${unlocked.name}!`, "success");
+    }
+
+    setPlayer(finalPlayer);
+    persistPlayer(finalPlayer);
+    showToast(
+      `🏆 Raid "${raid.title}" completa! 💰 +${raid.rewardBerries.toLocaleString()} Berries · ⭐ +${raid.rewardXp} XP · 🎲 +${raid.rewardRaceRolls} giro(s) de raça`,
+      "success"
+    );
   };
 
   const activeWorldData = WORLDS[activeWorld];
@@ -304,8 +706,16 @@ export default function Game({ player, setPlayer, onLogout }) {
   const missionIdx = Math.min(3, Math.floor(islandFraction * 3) + 1);
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <Navbar player={player} onLogout={onLogout} />
+    <div className="game-page" style={{ minHeight: "100vh" }}>
+      <Navbar
+        player={player}
+        nickname={pirateNickname}
+        avatarIcon={avatarIcon}
+        titleTag={titleTag}
+        xpPercent={xpPercent}
+        onLogout={onLogout}
+        onSaveNickname={saveNickname}
+      />
 
       {message && (
         <div style={{ backgroundColor: "var(--accent-blue)", padding: "10px", textAlign: "center", fontWeight: "bold" }}>
@@ -326,79 +736,125 @@ export default function Game({ player, setPlayer, onLogout }) {
           </div>
         </div>
 
-        <div className="equipment-panel">
-          <div>
-            <span>⚔️ Espada: </span>
-            <strong>{player.weapon_name || "Nenhuma"}</strong>
-            <small style={{ color: "var(--accent-green)", marginLeft: "8px" }}>
-              (+{weaponAtk} ATK)
-            </small>
+        {/* =================== HUD DO PERSONAGEM (2 CARDS) =================== */}
+        <div className="hud-grid">
+          {/* CARD 1: EQUIPAMENTO ATUAL */}
+          <div className="glass-card">
+            <h3 className="glass-card-title">🗡️ Equipamento Atual</h3>
+            <div className="equip-list">
+              <div className="equip-row">
+                <span className="equip-icon">⚔️</span>
+                <div className="equip-info">
+                  <span className="equip-name">
+                    {currentWeapon ? currentWeapon.name : "Nenhuma espada"}
+                    {refineWeaponLevel > 0 ? <span className="equip-refine">+{refineWeaponLevel}</span> : ""}
+                  </span>
+                  <span className="equip-sub">Bônus de ATK</span>
+                </div>
+                <span className="equip-value">+{Math.round(boostedWeaponAtk)}</span>
+              </div>
+
+              <div className="equip-row">
+                {currentFruit ? (
+                  <FruitImage
+                    src={currentFruit.image}
+                    alt={currentFruit.name}
+                    fallback={currentFruit.icon}
+                    size={38}
+                  />
+                ) : (
+                  <span className="equip-icon">🥭</span>
+                )}
+                <div className="equip-info">
+                  <span className="equip-name">
+                    {currentFruit ? currentFruit.name : "Nenhuma fruta"}
+                    {fruitAwakened && <span className="tag-awakened">✨ Despertada</span>}
+                  </span>
+                  <span className="equip-sub">
+                    +{Math.round(fruitAtk)} ATK · +{Math.round(fruitBonusHp)} HP
+                  </span>
+                </div>
+              </div>
+
+              <div className="equip-row">
+                <span className="equip-icon">💍</span>
+                <div className="equip-info">
+                  <span className="equip-name">
+                    {currentAccessory ? currentAccessory.name : "Nenhum acessório"}
+                    {refineAccessoryLevel > 0 ? <span className="equip-refine">+{refineAccessoryLevel}</span> : ""}
+                  </span>
+                  <span className="equip-sub">Bônus de HP</span>
+                </div>
+                <span className="equip-value">+{Math.round(accessoryBonusHp)}</span>
+              </div>
+
+              <div className="equip-row">
+                <span className="equip-icon">🎲</span>
+                <div className="equip-info">
+                  <span className="equip-name">Giros disponíveis</span>
+                  <span className="equip-sub">Fruta + Raça</span>
+                </div>
+                <span className="equip-value">
+                  {player.fruit_rolls} · {raceRolls}
+                </span>
+              </div>
+            </div>
           </div>
-          <div>
-            <span>🥭 Akuma no Mi: </span>
-            <strong>{player.fruit_name || "Nenhuma"}</strong>
-            <small style={{ color: "var(--accent-green)", marginLeft: "8px" }}>
-              (+{fruitAtk} ATK)
-            </small>
-          </div>
-          <div>
-            <span>💍 Acessório: </span>
-            <strong>{player.accessory_name || "Nenhum"}</strong>
-            <small style={{ color: "var(--accent-green)", marginLeft: "8px" }}>
-              (+{accessoryBonusHp} HP)
-            </small>
-          </div>
-          <div>
-            <span>❤️ Vida Total: </span>
-            <strong style={{ color: "var(--accent-green)" }}>{totalHp}</strong>
-          </div>
-          <div>
-            <span>🔥 Ataque Total: </span>
-            <strong style={{ color: "var(--accent-gold)" }}>{totalAtk}</strong>
-          </div>
-          <div>
-            <span>🎲 Giros: </span>
-            <strong>{player.fruit_rolls}</strong>
+
+          {/* CARD 2: STATUS E PODERES */}
+          <div className="glass-card">
+            <h3 className="glass-card-title">⚡ Status e Poderes</h3>
+
+            <div className="hud-stats">
+              <div className="hud-stat hud-stat-hp">
+                <span className="hud-stat-label">❤️ Vida Total</span>
+                <strong className="hud-stat-value">{totalHp}</strong>
+              </div>
+              <div className="hud-stat hud-stat-atk">
+                <span className="hud-stat-label">🔥 Ataque Total</span>
+                <strong className="hud-stat-value">{totalAtk}</strong>
+              </div>
+            </div>
+
+            <div className="hud-section">
+              <span className="hud-section-label">🌀 Hakis Despertados</span>
+              <div className="haki-badges">
+                <span className={`haki-badge haki-arm ${haki.armamento ? "on" : "off"}`}>🖤 Armamento</span>
+                <span className={`haki-badge haki-obs ${haki.observacao ? "on" : "off"}`}>👁️ Observação</span>
+                <span className={`haki-badge haki-king ${haki.rei ? "on" : "off"}`}>👑 Haki do Rei</span>
+              </div>
+            </div>
+
+            <div className="hud-section">
+              <span className="hud-section-label">🧬 Raça Equipada</span>
+              <div className="race-tag-row">
+                <span className={`race-tag race-${currentRace.rarity.toLowerCase()}`}>
+                  {currentRace.icon} {currentRace.name}
+                </span>
+                <span className={`badge badge-${currentRace.rarity.toLowerCase()}`}>{currentRace.rarity}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="tab-navigation">
-          <button
-            className={`tab-button ${activeTab === "story" ? "active" : ""}`}
-            onClick={() => setActiveTab("story")}
-          >
-            🌍 Explorar Mares
-          </button>
-          <button
-            className={`tab-button ${activeTab === "side" ? "active" : ""}`}
-            onClick={() => setActiveTab("side")}
-          >
-            💰 Caças
-          </button>
-          <button
-            className={`tab-button ${activeTab === "legendary" ? "active" : ""}`}
-            onClick={() => setActiveTab("legendary")}
-          >
-            ⚔️ Armas Lendárias
-          </button>
-          <button
-            className={`tab-button ${activeTab === "shop" ? "active" : ""}`}
-            onClick={() => setActiveTab("shop")}
-          >
-            🛒 Loja de Espadas
-          </button>
-          <button
-            className={`tab-button ${activeTab === "accessories" ? "active" : ""}`}
-            onClick={() => setActiveTab("accessories")}
-          >
-            💍 Loja de Acessórios
-          </button>
-          <button
-            className={`tab-button ${activeTab === "gacha" ? "active" : ""}`}
-            onClick={() => setActiveTab("gacha")}
-          >
-            🎲 Roleta de Frutas
-          </button>
+        {/* =================== MENU DE NAVEGAÇÃO (ABAS) =================== */}
+        <div className="tab-nav">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="tab-group">
+              <span className="tab-group-label">{group.label}</span>
+              <div className="tab-group-items">
+                {group.items.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`tab-button ${activeTab === item.key ? "active" : ""}`}
+                    onClick={() => setActiveTab(item.key)}
+                  >
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* =================== EXPLORAR MARES (MUNDOS + ILHAS) =================== */}
@@ -538,7 +994,73 @@ export default function Game({ player, setPlayer, onLogout }) {
         {/* =================== LOJA DE ESPADAS (POR MAR) =================== */}
         {activeTab === "shop" && (
           <div>
-            <h3 style={{ marginBottom: "15px" }}>🛒 Loja de Espadas</h3>
+            <h3 style={{ marginBottom: "5px" }}>🛒 Loja de Espadas</h3>
+
+            {/* ===== REFINARIA DE EQUIPAMENTOS (+0 a +10) ===== */}
+            <div style={{ marginBottom: "25px", padding: "16px", border: "1px solid var(--border-color)", borderRadius: "12px", backgroundColor: "var(--bg-card)" }}>
+              <h4 style={{ marginBottom: "4px", color: "var(--accent-gold)" }}>⛏️ Refinaria de Equipamentos</h4>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
+                Cada nível de refino (+1 a +10) concede <strong>+15%</strong> dos atributos base do item (no +10, o item dá +150% de status). Custo: <strong>Nível × 50.000 Berries</strong>.
+              </p>
+              <div className="shop-grid">
+                <div className="card">
+                  <h4>⚔️ Refinar Espada: {currentWeapon ? currentWeapon.name : "Nenhuma"}</h4>
+                  {currentWeapon ? (
+                    <>
+                      <p style={{ fontSize: "13px", color: "var(--accent-green)" }}>
+                        ATK base: +{weaponAtk} → Refinado: +{Math.round(boostedWeaponAtk)} ({refineWeaponLevel}/10)
+                      </p>
+                      {refineWeaponLevel < 10 ? (
+                        <>
+                          <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold" }}>
+                            Custo: 💰 {((refineWeaponLevel + 1) * 50000).toLocaleString()} Berries
+                          </p>
+                          <button
+                            onClick={refineWeapon}
+                            style={{ width: "100%", backgroundColor: "var(--accent-gold)", color: "#000" }}
+                          >
+                            ⛏️ Refinar para +{refineWeaponLevel + 1}
+                          </button>
+                        </>
+                      ) : (
+                        <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: 0 }}>✔ Nível máximo +10 alcançado!</p>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Compre uma espada para poder refiná-la.</p>
+                  )}
+                </div>
+
+                <div className="card">
+                  <h4>💍 Refinar Acessório: {currentAccessory ? currentAccessory.name : "Nenhum"}</h4>
+                  {currentAccessory ? (
+                    <>
+                      <p style={{ fontSize: "13px", color: "var(--accent-green)" }}>
+                        HP base: +{accessoryHpBase} → Refinado: +{Math.round(accessoryBonusHp)} ({refineAccessoryLevel}/10)
+                      </p>
+                      {refineAccessoryLevel < 10 ? (
+                        <>
+                          <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold" }}>
+                            Custo: 💰 {((refineAccessoryLevel + 1) * 50000).toLocaleString()} Berries
+                          </p>
+                          <button
+                            onClick={refineAccessory}
+                            style={{ width: "100%", backgroundColor: "var(--accent-purple)", color: "#fff" }}
+                          >
+                            ⛏️ Refinar para +{refineAccessoryLevel + 1}
+                          </button>
+                        </>
+                      ) : (
+                        <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: 0 }}>✔ Nível máximo +10 alcançado!</p>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Compre um acessório para poder refiná-lo.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {SEA_ORDER.map((sea) => {
               const seaWeapons = WEAPONS.filter((w) => w.price && w.sea === sea);
               if (!seaWeapons.length) return null;
@@ -593,12 +1115,11 @@ export default function Game({ player, setPlayer, onLogout }) {
                     {seaAccessories.map((accessory) => (
                       <div key={accessory.id} className={`card ${accessory.rarity === "Lendária" ? "card-legendary" : ""}`}>
                         {accessory.image && (
-                          <img
+                          <FruitImage
                             src={accessory.image}
                             alt={accessory.name}
-                            referrerPolicy="no-referrer"
-                            style={{ width: "70px", height: "70px", objectFit: "contain", margin: "0 auto 10px auto", display: "block" }}
-                            onError={(e) => { e.target.style.visibility = "hidden"; }}
+                            fallback="💍"
+                            size={70}
                           />
                         )}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
@@ -639,6 +1160,238 @@ export default function Game({ player, setPlayer, onLogout }) {
           </div>
         )}
 
+        {/* =================== TREINAMENTO DE HAKI =================== */}
+        {activeTab === "haki" && (
+          <div>
+            <h3 style={{ marginBottom: "5px" }}>🧘 Treinamento de Haki</h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: "15px" }}>
+              Desperte as três formas de Haki para fortalecer seu pirata no combate automático.
+            </p>
+            <div className="shop-grid">
+              {HAKI_TRAINING.map((h) => {
+                const unlocked = haki[h.key];
+                const bossCleared = h.bossRequirement ? worldProgress >= 3 : true;
+                const meetsReq = player.level >= h.reqLevel && bossCleared;
+                const canAfford = h.cost === 0 || player.berries >= h.cost;
+                const canAwaken = !unlocked && meetsReq && canAfford;
+                const buttonText = !meetsReq
+                  ? "🔒 Requisitos não atendidos"
+                  : !canAfford
+                  ? "💰 Berries insuficientes"
+                  : "⚡ Despertar Haki";
+                return (
+                  <div key={h.key} className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                      <h4>
+                        {h.icon} {h.name}
+                      </h4>
+                      {unlocked && <span className="badge badge-lendaria">Despertado ✓</span>}
+                    </div>
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                      🔓 Nível {h.reqLevel}
+                      {h.bossRequirement && " + Chefe do Mundo 2 derrotado"}
+                    </p>
+                    {h.cost > 0 && (
+                      <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "8px" }}>
+                        💰 {h.cost.toLocaleString()} Berries
+                      </p>
+                    )}
+                    <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px", lineHeight: "1.6" }}>
+                      {h.effects.map((effect, i) => (
+                        <div key={i}>✨ {effect}</div>
+                      ))}
+                    </div>
+                    {unlocked ? (
+                      <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: 0 }}>
+                        ✔ Haki ativo no combate!
+                      </p>
+                    ) : (
+                      <button
+                        onClick={() => awakenHaki(h.key, h.cost, h.name)}
+                        disabled={!canAwaken}
+                        style={{
+                          width: "100%",
+                          backgroundColor: canAwaken ? "var(--accent-purple)" : "var(--border-color)",
+                          color: canAwaken ? "#fff" : "var(--text-muted)",
+                          cursor: canAwaken ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        {buttonText}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ===== ACADEMIA DE TREINAMENTO DE STATUS ===== */}
+            <div style={{ marginTop: "30px" }}>
+              <h4 style={{ marginBottom: "4px", color: "var(--accent-gold)" }}>🏋️ Academia de Treinamento de Status</h4>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
+                Treine permanentemente seus atributos base gastando Berries. Treinos atuais: 💪 +{trainingAtk} ATK · ❤️ +{trainingHp} HP.
+              </p>
+              <div className="shop-grid">
+                <div className="card">
+                  <h4>💪 Treinar Força</h4>
+                  <p style={{ fontSize: "13px", color: "var(--accent-green)", marginBottom: "6px" }}>
+                    Aumenta o Ataque Base em <strong>+100 ATK</strong> (permanente).
+                  </p>
+                  <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "10px" }}>
+                    Custo: 💰 30.000 Berries
+                  </p>
+                  <button
+                    onClick={trainStrength}
+                    style={{ width: "100%", backgroundColor: "var(--accent-blue)", color: "#fff" }}
+                  >
+                    💪 Treinar Força
+                  </button>
+                </div>
+                <div className="card">
+                  <h4>❤️ Treinar Vitalidade</h4>
+                  <p style={{ fontSize: "13px", color: "var(--accent-green)", marginBottom: "6px" }}>
+                    Aumenta a Vida Base em <strong>+350 HP</strong> (permanente).
+                  </p>
+                  <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "10px" }}>
+                    Custo: 💰 30.000 Berries
+                  </p>
+                  <button
+                    onClick={trainVitality}
+                    style={{ width: "100%", backgroundColor: "var(--accent-green)", color: "#fff" }}
+                  >
+                    ❤️ Treinar Vitalidade
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =================== ROLETA DE RAÇAS =================== */}
+        {activeTab === "race" && (
+          <div>
+            <h3 style={{ marginBottom: "5px" }}>🧬 Roleta de Raças</h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: "15px" }}>
+              Gire a roleta para trocar de raça. Cada raça concede bônus passivos de vida, ataque e esquiva.
+            </p>
+
+            <div key={raceRevealKey} className="card fruit-reveal" style={{ maxWidth: "420px", margin: "0 auto 20px auto", textAlign: "center" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h4>
+                  {currentRace.icon} {currentRace.name}
+                </h4>
+                <span className={`badge badge-${currentRace.rarity.toLowerCase()}`}>{currentRace.rarity}</span>
+              </div>
+              <div style={{ fontSize: "14px", color: "var(--accent-green)", fontWeight: "bold", marginBottom: "6px" }}>
+                HP x{currentRace.hpMultiplier} · ATK x{currentRace.atkMultiplier}
+                {currentRace.dodgeChance > 0 && <> · Esquiva {currentRace.dodgeChance}%</>}
+              </div>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", lineHeight: "1.5", margin: 0 }}>
+                {currentRace.description}
+              </p>
+            </div>
+
+            <div style={{ textAlign: "center", marginBottom: "25px" }}>
+              {currentTitle.luckBonus > 0 && (
+                <div className="luck-indicator" style={{ marginBottom: "12px" }}>
+                  ✨ Bônus de Sorte Ativo: +{currentTitle.luckBonus}% ({titleTag})
+                </div>
+              )}
+              <button
+                onClick={doRollRace}
+                style={{
+                  padding: "14px 28px",
+                  fontSize: "16px",
+                  backgroundColor: "var(--accent-green)",
+                  color: "#fff",
+                }}
+              >
+                Girar Raça ({raceRolls} giro(s) grátis · depois 20.000 💰 Berries)
+              </button>
+            </div>
+
+            <h4 style={{ marginBottom: "10px", color: "var(--accent-gold)" }}>Todas as Raças Existentes</h4>
+            <div className="shop-grid">
+              {RACES.map((race) => {
+                const isCurrent = race.name === currentRace.name;
+                return (
+                  <div key={race.id} className="card" style={isCurrent ? { borderColor: "var(--accent-green)" } : {}}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <h4>
+                        {race.icon} {race.name}
+                      </h4>
+                      <span className={`badge badge-${race.rarity.toLowerCase()}`}>{race.rarity}</span>
+                    </div>
+                    <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "6px" }}>
+                      🎲 Chance: {race.chance}%
+                    </p>
+                    <p style={{ fontSize: "13px", color: "var(--accent-green)", marginBottom: "6px" }}>
+                      ❤️ HP x{race.hpMultiplier} · ⚔️ ATK x{race.atkMultiplier}
+                      {race.dodgeChance > 0 && <> · 💨 Esquiva {race.dodgeChance}%</>}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.5", margin: 0 }}>
+                      {race.description}
+                    </p>
+                    {isCurrent && (
+                      <p style={{ fontSize: "13px", color: "var(--accent-green)", fontWeight: "bold", margin: "10px 0 0 0" }}>
+                        ✔ Raça equipada
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* =================== RAIDS (BATALHAS EM ONDAS) =================== */}
+        {activeTab === "raids" && (
+          <div>
+            <h3 style={{ marginBottom: "5px" }}>☠️ Raids — Batalhas em Ondas Sequenciais</h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: "15px" }}>
+              Enfrente chefes em rodadas seguidas. Entre as ondas você recupera 25% da vida perdida. As recompensas são altíssimas!
+            </p>
+            <div className="shop-grid">
+              {RAIDS.map((raid) => {
+                const locked = player.level < raid.minLevel;
+                return (
+                  <div key={raid.id} className="card" style={locked ? { opacity: 0.75 } : {}}>
+                    <h4 style={{ marginBottom: "6px" }}>☠️ {raid.title}</h4>
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)", lineHeight: "1.4", marginBottom: "8px" }}>
+                      {raid.description}
+                    </p>
+                    <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "6px" }}>
+                      🔒 Nível mínimo: {raid.minLevel}
+                      {locked && " (Bloqueado)"}
+                    </p>
+                    <p style={{ fontSize: "13px", color: "var(--accent-green)", marginBottom: "8px" }}>
+                      💰 {raid.rewardBerries.toLocaleString()} Berries · ⭐ {raid.rewardXp} XP · 🎲 +{raid.rewardRaceRolls} giro(s) de raça
+                    </p>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "10px", lineHeight: "1.6" }}>
+                      {raid.waves.map((wave, i) => (
+                        <p key={i} style={{ margin: "2px 0" }}>
+                          Rodada {i + 1}: {wave.name} (🛡️ {wave.hp} HP · ⚔️ {wave.atk} ATK)
+                        </p>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => startRaid(raid)}
+                      disabled={locked}
+                      style={{
+                        width: "100%",
+                        backgroundColor: locked ? "var(--border-color)" : "var(--accent-gold)",
+                        color: locked ? "var(--text-muted)" : "#000",
+                        cursor: locked ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {locked ? "🔒 Nível insuficiente" : "⚔️ Iniciar Raid"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* =================== ROLETA DE FRUTAS =================== */}
         {activeTab === "gacha" && (
           <div className="gacha-container">
@@ -649,11 +1402,12 @@ export default function Game({ player, setPlayer, onLogout }) {
 
             {currentFruit ? (
               <div key={gachaAnimKey} className="card card-legendary fruit-reveal" style={{ maxWidth: "360px", margin: "25px auto", textAlign: "center" }}>
-                <img
+                <FruitImage
                   src={currentFruit.image}
                   alt={currentFruit.name}
-                  referrerPolicy="no-referrer"
-                  style={{ width: "130px", height: "130px", objectFit: "contain", margin: "0 auto 10px auto", display: "block" }}
+                  fallback={currentFruit.icon}
+                  size={130}
+                  style={{ marginBottom: "10px" }}
                 />
                 <h4 style={{ fontSize: "18px" }}>{currentFruit.name}</h4>
                 <div style={{ margin: "8px 0" }}>
@@ -665,12 +1419,40 @@ export default function Game({ player, setPlayer, onLogout }) {
                   {currentFruit.description}
                 </p>
                 <div style={{ color: "var(--accent-green)", fontWeight: "bold", fontSize: "14px" }}>
-                  +{currentFruit.bonusAtk} ATK | +{currentFruit.bonusHp} HP
+                  +{Math.round(fruitAtk)} ATK | +{Math.round(fruitBonusHp)} HP{fruitAwakened && " ✨(Despertada ×10)"}
                 </div>
+                {fruitAwakened ? (
+                  <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: "12px 0 0 0" }}>
+                    ✨ Fruta Despertada — bônus multiplicados por 10!
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "10px 0 6px 0" }}>
+                      🔓 Requisito: Nível 40 · Custo: 💰 500.000 Berries
+                    </p>
+                    <button
+                      onClick={awakenFruit}
+                      style={{
+                        width: "100%",
+                        backgroundColor: player.level >= 40 ? "var(--accent-purple)" : "var(--border-color)",
+                        color: player.level >= 40 ? "#fff" : "var(--text-muted)",
+                        cursor: player.level >= 40 ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      ⚡ Despertar Fruta
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="card" style={{ maxWidth: "360px", margin: "25px auto" }}>
                 <p style={{ color: "var(--text-muted)" }}>Você ainda não ingeriu nenhuma Akuma no Mi.</p>
+              </div>
+            )}
+
+            {currentTitle.luckBonus > 0 && (
+              <div className="luck-indicator">
+                ✨ Bônus de Sorte Ativo: +{currentTitle.luckBonus}% ({titleTag})
               </div>
             )}
 
@@ -687,6 +1469,53 @@ export default function Game({ player, setPlayer, onLogout }) {
             </button>
           </div>
         )}
+
+        {/* =================== TÍTULOS =================== */}
+        {activeTab === "titles" && (
+          <div>
+            <h3 style={{ marginBottom: "5px" }}>🏆 Títulos de Pirata</h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: "15px" }}>
+              Equipe um título desbloqueado para ganhar bônus percentual de sorte nas roletas de Fruta e Raça. Título equipado:{" "}
+              <strong style={{ color: "var(--accent-gold)" }}>{titleTag}</strong> (sorte +{currentTitle.luckBonus}%).
+            </p>
+
+            <div className="shop-grid">
+              {TITLES.map((title) => {
+                const isUnlocked = unlockedTitles.includes(title.id);
+                const isEquipped = equippedTitle === title.id;
+                return (
+                  <div
+                    key={title.id}
+                    className={`card title-card ${isUnlocked ? "title-unlocked" : ""} ${isEquipped ? "title-equipped" : ""}`}
+                  >
+                    <div className="title-card-head">
+                      <span className="title-icon">{title.icon}</span>
+                      <h4 style={{ margin: 0, flex: 1 }}>{title.name}</h4>
+                      {isEquipped && <span className="badge badge-lendaria">Equipado</span>}
+                    </div>
+                    <p className="title-luck">✨ Bônus de Sorte: +{title.luckBonus}%</p>
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)", lineHeight: "1.5", marginBottom: "8px" }}>
+                      {title.description}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.4", marginBottom: "12px" }}>
+                      🔓 {title.requirement}
+                    </p>
+
+                    {!isUnlocked ? (
+                      <span className="title-status title-locked">🔒 Bloqueado</span>
+                    ) : !isEquipped ? (
+                      <button className="title-equip-btn" onClick={() => equipTitle(title.id)}>
+                        Equipar
+                      </button>
+                    ) : (
+                      <span className="title-status title-current">✔ Título ativo</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {activeQuiz && (
@@ -698,7 +1527,7 @@ export default function Game({ player, setPlayer, onLogout }) {
             setActiveCombat({ ...bossEnemy, weaponReward: activeQuiz.weaponReward });
           }}
           onFail={(msg) => {
-            alert(msg);
+            showToast(msg, "error");
             setActiveQuiz(null);
           }}
           onClose={() => setActiveQuiz(null)}
@@ -713,8 +1542,22 @@ export default function Game({ player, setPlayer, onLogout }) {
           playerMaxHp={totalHp}
           onVictory={handleVictory}
           onDefeat={() => {
-            alert("Você foi derrotado! Treine mais e tente novamente.");
+            showToast("Você foi derrotado! Treine mais e tente novamente.", "error");
             setActiveCombat(null);
+          }}
+        />
+      )}
+
+      {activeRaid && (
+        <RaidModal
+          player={player}
+          raid={activeRaid}
+          totalAtk={totalAtk}
+          playerMaxHp={totalHp}
+          onVictory={handleRaidVictory}
+          onDefeat={() => {
+            showToast("Você foi derrotado na Raid! Treine mais e tente novamente.", "error");
+            setActiveRaid(null);
           }}
         />
       )}
@@ -768,14 +1611,6 @@ export default function Game({ player, setPlayer, onLogout }) {
 
       {/* INDICADOR DE AUTO-SAVE */}
       {savedFlash && <div className="saved-indicator">💾 Salvo</div>}
-
-      {/* NOTIFICAÇÃO TOAST NO CANTO INFERIOR ESQUERDO */}
-      {levelToast && (
-        <div className="toast-notification">
-          <span>⚡</span>
-          <span>{levelToast}</span>
-        </div>
-      )}
     </div>
   );
 }

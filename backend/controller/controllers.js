@@ -32,7 +32,7 @@ export async function register(req, res) {
         const hash = await bcrypt.hash(password, 10);
 
         await prisma.player.create({
-            data: { username, password: hash }
+            data: { username, password: hash, nickname: username }
         });
 
         res.status(201).json({ msg: "Pirata registrado com sucesso!" });
@@ -82,7 +82,7 @@ export async function login(req, res) {
 // SALVAR PROGRESSO (Protegido por JWT)
 export async function saveGame(req, res) {
     const playerId = req.user.id;
-    const { level, xp, hp, bounty, berries, fruit_name, weapon_name, accessory_name, haki, fruit_rolls, world_progress } = req.body;
+    const { level, xp, hp, bounty, berries, fruit_name, weapon_name, accessory_name, haki, fruit_rolls, race, race_rolls, refine_weapon, refine_accessory, fruit_awakened, training_atk, training_hp, world_progress, nickname, unlocked_titles, equipped_title } = req.body;
 
     try {
         const updatedPlayer = await prisma.player.update({
@@ -96,9 +96,19 @@ export async function saveGame(req, res) {
                 fruit_name,
                 weapon_name,
                 accessory_name,
-                haki: Boolean(haki),
+                haki: haki !== undefined ? haki : undefined,
+                race,
+                race_rolls,
+                refine_weapon,
+                refine_accessory,
+                fruit_awakened: fruit_awakened !== undefined ? Boolean(fruit_awakened) : undefined,
+                training_atk,
+                training_hp,
                 fruit_rolls,
-                world_progress: world_progress !== undefined ? Number(world_progress) : undefined
+                world_progress: world_progress !== undefined ? Number(world_progress) : undefined,
+                nickname: nickname !== undefined ? String(nickname).slice(0, 24) : undefined,
+                unlocked_titles: Array.isArray(unlocked_titles) ? unlocked_titles : undefined,
+                equipped_title: equipped_title !== undefined ? String(equipped_title) : undefined
             }
         });
 
