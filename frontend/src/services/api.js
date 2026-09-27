@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getSessionToken } from "../utils/session";
 
 const API = axios.create({
   baseURL: "http://localhost:3000/api",
@@ -6,7 +7,7 @@ const API = axios.create({
 
 // Anexa o Token JWT automaticamente em todas as requisições protegidas
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getSessionToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

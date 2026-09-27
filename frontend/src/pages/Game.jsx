@@ -35,6 +35,7 @@ import {
   unlockNextSlot,
   updateActiveItem,
 } from "../utils/equipmentSlots";
+import { savePlayerSnapshot } from "../utils/session";
 import API from "../services/api";
 
 const MAX_LEVEL = 50;
@@ -135,9 +136,27 @@ const RAID_TITLE_REWARDS = {
   roger_pirates: "pirate_king",
 };
 
+// ===== SORTEIO (GACHA) POR TAXA DE RARIDADE =====
+// O sorteio acontece em duas etapas: primeiro a RARIDADE (via um único roll de 0 a 100),
+// depois o item dentro daquela raridade. Assim o bônus de sorte do título só precisa
+// tocar nas taxa de raridade — e nunca na taxa individual de um item.
+
+// Ordem canônica de avaliação: da mais rara para a mais comum.
+const RARITY_ORDER = ["Lendária", "Épica", "Rara", "Comum"];
+
+// Peso bruto base por raridade de Fruta (usado só para derivar as porcentagens de raridade)
+const FRUIT_BASE_WEIGHTS = { Comum: 100, Rara: 45, Épica: 15, Lendária: 5 };
+
+// Piso da taxa da raridade Comum: garante que a roleta nunca zere essa faixa.
+const MIN_COMMON_RATE = 5;
+
+// Ícones exibidos nos badges de chance das roletas
+const RARITY_ICONS = { Lendária: "✨", Épica: "🟣", Rara: "🔵", Comum: "⚪" };
+
 // Sorteio ponderado genérico (impuro) isolado no escopo do módulo — fora do corpo do componente
 function pickWeighted(items, weights) {
   const total = weights.reduce((acc, w) => acc + w, 0);
+  if (total <= 0) return items[0];
   let roll = Math.random() * total;
   for (let i = 0; i < items.length; i += 1) {
     roll -= weights[i];
@@ -146,26 +165,97 @@ function pickWeighted(items, weights) {
   return items[items.length - 1];
 }
 
-// Peso base por raridade de Fruta (fração das roletas)
-const FRUIT_BASE_WEIGHTS = { Comum: 100, Rara: 45, Épica: 15, Lendária: 5 };
-
-// Sorteio de fruta ponderado pela raridade, com bônus de sorte do título equipado
-function pickRandomFruit(luckMultiplier = 1) {
-  const weights = FRUITS.map((fruit) => {
-    const base = FRUIT_BASE_WEIGHTS[fruit.rarity] ?? 10;
-    const boost = fruit.rarity === "Épica" || fruit.rarity === "Lendária" ? luckMultiplier : 1;
-    return base * boost;
-  });
-  return pickWeighted(FRUITS, weights);
+// Soma o peso bruto de cada raridade a partir de uma função de peso por item
+function sumWeightsByRarity(items, weightOf) {
+  const totals = {};
+  for (const item of items) {
+    totals[item.rarity] = (totals[item.rarity] || 0) + weightOf(item);
+  }
+  return totals;
 }
 
-// Sorteio de raça ponderado pelas porcentagens (chance) de RACES, com bônus de sorte
-function pickRandomRace(luckMultiplier = 1) {
-  const weights = RACES.map((race) => {
-    const boost = race.rarity === "Épica" || race.rarity === "Lendária" ? luckMultiplier : 1;
-    return race.chance * boost;
-  });
-  return pickWeighted(RACES, weights);
+// Converte pesos brutos por raridade em porcentagens que somam 100
+function toPercentages(rawWeights) {
+  const total = RARITY_ORDER.reduce((acc, rarity) => acc + (rawWeights[rarity] || 0), 0) || 1;
+  const rates = {};
+  for (const rarity of RARITY_ORDER) {
+    rates[rarity] = ((rawWeights[rarity] || 0) / total) * 100;
+  }
+  return rates;
+}
+
+// Chances base de cada raridade, derivadas dos dados (sem bônus de sorte)
+const FRUIT_BASE_RATES = toPercentages(
+  sumWeightsByRarity(FRUITS, (fruit) => FRUIT_BASE_WEIGHTS[fruit.rarity] ?? 10)
+);
+const RACE_BASE_RATES = toPercentages(sumWeightsByRarity(RACES, (race) => race.chance || 0));
+
+// Taxas efetiva da roleta: as raridades altas multiplicam a base pelo bônus de sorte
+// e a Comum fica com o que sobrar (com piso de MIN_COMMON_RATE%).
+function getRarityRates(baseRates, luckMultiplier = 1) {
+  const legendary = baseRates["Lendária"] * luckMultiplier;
+  const epic = baseRates["Épica"] * luckMultiplier;
+  const rare = baseRates["Rara"] * luckMultiplier;
+  return {
+    Lendária: legendary,
+    Épica: epic,
+    Rara: rare,
+    Comum: Math.max(MIN_COMMON_RATE, 100 - (legendary + epic + rare)),
+  };
+}
+
+// Sorteia a raridade num único roll de 0 a 100, sempre do mais raro para o mais comum
+function rollRarity(rates) {
+  const legendary = rates["Lendária"];
+  const epic = rates["Épica"];
+  const rare = rates["Rara"];
+  const roll = Math.random() * 100;
+  if (roll < legendary) return "Lendária";
+  if (roll < legendary + epic) return "Épica";
+  if (roll < legendary + epic + rare) return "Rara";
+  return "Comum";
+}
+
+// Sorteio de fruta: raridade pelas chances + item uniforme dentro da raridade
+// (a raridade é sorteada UMA vez, fora do filter — chamar rollRarity dentro do
+// predicado reprocessaria o sorteio uma vez por item e enviesaria as raridades altas)
+function pickRandomFruit(rates) {
+  const rarity = rollRarity(rates);
+  const pool = FRUITS.filter((fruit) => fruit.rarity === rarity);
+  if (pool.length === 0) return pickWeighted(FRUITS, FRUITS.map(() => 1));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Sorteio de raça: raridade pelas chances + item ponderado pelo campo `chance` dentro da raridade
+function pickRandomRace(rates) {
+  const rarity = rollRarity(rates);
+  const pool = RACES.filter((race) => race.rarity === rarity);
+  if (pool.length === 0) return pickWeighted(RACES, RACES.map((race) => race.chance || 1));
+  return pickWeighted(pool, pool.map((race) => race.chance || 1));
+}
+
+// Chance efetiva de um item: a taxa da sua raridade (já com sorte) dividida entre os itens dela
+function getItemChance(item, baseRates, rates) {
+  const baseTotal = baseRates[item.rarity] || 0;
+  if (baseTotal <= 0) return 0;
+  return ((rates[item.rarity] || 0) / baseTotal) * (item.chance || 0);
+}
+
+function formatRate(value) {
+  return `${Number(value.toFixed(2))}%`;
+}
+
+// Badges com as chances reais da roleta, já com o bônus de sorte do título equipado aplicado
+function RarityOdds({ rates }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginBottom: "14px" }}>
+      {RARITY_ORDER.map((rarity) => (
+        <span key={rarity} className={`badge badge-${rarity.toLowerCase()}`}>
+          {RARITY_ICONS[rarity]} {rarity}: {formatRate(rates[rarity])}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 const RACE_ROLL_COST = 20000;
@@ -257,6 +347,10 @@ export default function Game({ player, setPlayer, onLogout }) {
   const luckMultiplier = 1 + (currentTitle.luckBonus || 0) / 100;
   const titleTag = `${currentTitle.icon} ${currentTitle.name}`;
 
+  // Taxas efetivas de cada roleta com o bônus de sorte aplicado (usadas no sorteio e exibidas na UI)
+  const fruitRates = getRarityRates(FRUIT_BASE_RATES, luckMultiplier);
+  const raceRates = getRarityRates(RACE_BASE_RATES, luckMultiplier);
+
   // Equipar um título desbloqueado (persistência via persistPlayer)
   const equipTitle = (titleId) => {
     if (!unlockedTitles.includes(titleId)) {
@@ -345,11 +439,7 @@ export default function Game({ player, setPlayer, onLogout }) {
   const persistPlayer = (rawPlayer) => {
     // Mantém as colunas legadas de equipamento em sincronia com os slots ativos
     const nextPlayer = syncLegacyEquipFields(rawPlayer);
-    try {
-      localStorage.setItem("minirpg_save", JSON.stringify(nextPlayer));
-    } catch {
-      // armazenamento indisponível — ignora
-    }
+    savePlayerSnapshot(nextPlayer);
     API.post("/save", nextPlayer).catch(() => {
       // salvamento automático em background; falhas silenciosas
     });
@@ -563,7 +653,7 @@ export default function Game({ player, setPlayer, onLogout }) {
       return;
     }
 
-    const rolledFruit = pickRandomFruit(luckMultiplier);
+    const rolledFruit = pickRandomFruit(fruitRates);
     const rolledItem = toFruitSlotItem(rolledFruit);
 
     // A fruta obtida ocupa um slot livre; se não houver, o jogador escolhe qual substituir
@@ -766,7 +856,7 @@ export default function Game({ player, setPlayer, onLogout }) {
       return;
     }
 
-    const rolledRace = pickRandomRace(luckMultiplier);
+    const rolledRace = pickRandomRace(raceRates);
 
     const nextPlayer = {
       ...player,
@@ -1483,6 +1573,7 @@ export default function Game({ player, setPlayer, onLogout }) {
                   ✨ Bônus de Sorte Ativo: +{currentTitle.luckBonus}% ({titleTag})
                 </div>
               )}
+              <RarityOdds rates={raceRates} />
               <button
                 onClick={doRollRace}
                 style={{
@@ -1509,7 +1600,7 @@ export default function Game({ player, setPlayer, onLogout }) {
                       <span className={`badge badge-${race.rarity.toLowerCase()}`}>{race.rarity}</span>
                     </div>
                     <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold", marginBottom: "6px" }}>
-                      🎲 Chance: {race.chance}%
+                      🎲 Chance atual: {formatRate(getItemChance(race, RACE_BASE_RATES, raceRates))}
                     </p>
                     <p style={{ fontSize: "13px", color: "var(--accent-green)", marginBottom: "6px" }}>
                       ❤️ HP x{race.hpMultiplier} · ⚔️ ATK x{race.atkMultiplier}
@@ -1645,6 +1736,8 @@ export default function Game({ player, setPlayer, onLogout }) {
                 ✨ Bônus de Sorte Ativo: +{currentTitle.luckBonus}% ({titleTag})
               </div>
             )}
+
+            <RarityOdds rates={fruitRates} />
 
             <button
               onClick={handleSpinClick}

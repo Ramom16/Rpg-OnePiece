@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import API from "../services/api";
+import { saveSession } from "../utils/session";
 
 export default function Login({ onLoginSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -20,7 +21,8 @@ export default function Login({ onLoginSuccess }) {
         setMessage("Cadastrado com sucesso! Faça login para jogar.");
         setIsRegister(false);
       } else {
-        localStorage.setItem("token", response.data.token);
+        // Persiste a sessão para o F5 não derrubar o jogador de volta no login
+        saveSession({ token: response.data.token, user: response.data.player });
         onLoginSuccess(response.data.player);
       }
     } catch (err) {
