@@ -20,6 +20,8 @@ model Player {
   fruit_name    String?
   weapon_name   String?
   accessory_name String?
+  weaponSlots   Json?
+  fruitSlots    Json?
   haki        Json?
   race        String?
   race_rolls  Int      @default(3)

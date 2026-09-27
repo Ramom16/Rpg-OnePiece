@@ -125,31 +125,235 @@
   font-weight: 700;
 }
 
-/* Seletor de Mundos (Blox Fruits) */
-.world-selector {
+/* Cabeçalho de Seção (título + subtítulo) */
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.section-subtitle {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* ===== CARTÕES DE MUNDO (SELEÇÃO DE MARES) ===== */
+.world-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 768px) {
+  .world-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Tom visual de cada mar: azul oceano, índigo e dourado */
+.world-card-ocean {
+  --sea-accent: #38bdf8;
+  --sea-tint: rgba(56, 189, 248, 0.16);
+  --sea-glow: rgba(56, 189, 248, 0.35);
+}
+
+.world-card-indigo {
+  --sea-accent: #a78bfa;
+  --sea-tint: rgba(139, 92, 246, 0.18);
+  --sea-glow: rgba(139, 92, 246, 0.35);
+}
+
+.world-card-gold {
+  --sea-accent: #fbbf24;
+  --sea-tint: rgba(251, 191, 36, 0.16);
+  --sea-glow: rgba(251, 191, 36, 0.35);
 }
 
 .world-card {
+  position: relative;
+  display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
   text-align: left;
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 14px 16px;
+  color: var(--text-main);
+  background-color: rgba(9, 15, 32, 0.6);
+  background-image: linear-gradient(160deg, var(--sea-tint), rgba(9, 15, 32, 0) 62%);
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
+.world-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(100, 116, 139, 0.9);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+  filter: none;
+}
+
+/* Estado selecionado: borda acentuada com brilho neon + fundo mais presente */
 .world-card.active {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(17, 138, 178, 0.25);
+  border-color: var(--sea-accent);
+  background-color: rgba(30, 41, 59, 0.9);
+  box-shadow: 0 0 0 1px var(--sea-accent), 0 10px 30px var(--sea-glow);
 }
 
-.world-card.locked {
-  opacity: 0.7;
+.world-card.active:hover {
+  box-shadow: 0 0 0 1px var(--sea-accent), 0 16px 36px var(--sea-glow);
+  filter: none;
+}
+
+/* Estado bloqueado: escurecido, sem elevação e sem interação */
+.world-card.locked,
+.world-card.locked:hover {
+  opacity: 0.6;
+  transform: none;
+  cursor: not-allowed;
+  filter: none;
+  background-color: rgba(9, 15, 32, 0.6);
+  background-image: none;
+  border-color: rgba(51, 65, 85, 0.5);
+  box-shadow: none;
+}
+
+/* Badge de status no topo do card */
+.world-card-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.world-card-badge.active {
+  color: #0b132b;
+  background-color: var(--sea-accent);
+  border-color: var(--sea-accent);
+  box-shadow: 0 0 14px var(--sea-glow);
+}
+
+.world-card-badge.locked {
+  color: #fbbf24;
+  background-color: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+/* Corpo do card: ícone em destaque + identificação do mundo */
+.world-card-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.world-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  border-radius: 14px;
+  font-size: 28px;
+  background-color: var(--sea-tint);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: inset 0 0 18px var(--sea-tint);
+}
+
+.world-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.world-card-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.world-card-subtitle {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.world-card-levels {
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--sea-accent);
+}
+
+.world-card-hint {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #fbbf24;
+}
+
+/* Rodapé do card: progresso de exploração naquele mundo */
+.world-card-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.world-card-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.world-card-progress-value {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sea-accent);
+}
+
+.world-card-progress-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.world-card-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sea-accent), rgba(255, 255, 255, 0.85));
+  box-shadow: 0 0 10px var(--sea-glow);
+  transition: width 0.4s ease;
 }
 
 /* Card de Ilha (Acordeão) */
@@ -1095,4 +1299,416 @@
 
 .title-equip-btn:hover {
   background-color: rgba(79, 70, 229, 0.45);
+}
+
+/* ==========================================================
+   SISTEMA DE SLOTS DE ARMAS E AKUMA NO MI
+   ========================================================== */
+
+/* Dois painéis lado a lado (arma / fruta) */
+.slots-manager {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+@media (min-width: 900px) {
+  .slots-manager {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.slots-panel {
+  --slot-accent: #38bdf8;
+  --slot-glow: rgba(56, 189, 248, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background-color: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.slots-panel-fruit {
+  --slot-accent: #a855f7;
+  --slot-glow: rgba(168, 85, 247, 0.35);
+}
+
+.slots-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.slots-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.slots-panel-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.slots-panel-count {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--slot-accent);
+  background-color: rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--slot-accent);
+}
+
+.slots-panel-note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-green);
+  text-align: center;
+}
+
+/* Os 3 slots do painel */
+.slots-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.slot-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 8px;
+  text-align: center;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(2, 6, 23, 0.5);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* SLOT COM ITEM */
+.slot-filled:hover {
+  transform: translateY(-2px);
+  border-color: var(--slot-accent);
+}
+
+.slot-filled.active {
+  border-color: var(--slot-accent);
+  background-color: rgba(30, 41, 59, 0.9);
+  box-shadow: 0 0 0 1px var(--slot-accent), 0 8px 24px var(--slot-glow);
+}
+
+.slot-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.slot-number {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.slot-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  background-color: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.slot-badge-active {
+  color: #0b132b;
+  background-color: var(--slot-accent);
+  border-color: var(--slot-accent);
+  box-shadow: 0 0 10px var(--slot-glow);
+}
+
+.slot-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 54px;
+}
+
+.slot-item-emoji {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.slot-item-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.slot-item-stats {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-green);
+  line-height: 1.35;
+}
+
+.slot-item-stats em {
+  font-style: normal;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.slot-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.slot-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #cbd5e1;
+  background-color: rgba(148, 163, 184, 0.14);
+}
+
+.slot-tag-comum { color: #cbd5e1; background-color: rgba(100, 116, 139, 0.28); }
+.slot-tag-rara { color: #7dd3fc; background-color: rgba(17, 138, 178, 0.25); }
+.slot-tag-epica { color: #d8b4fe; background-color: rgba(139, 92, 246, 0.25); }
+.slot-tag-lendaria { color: var(--accent-gold); background-color: rgba(255, 209, 102, 0.18); }
+.slot-tag-awakened { color: #0b132b; background-color: var(--accent-gold); }
+
+.slot-action {
+  width: 100%;
+  margin-top: auto;
+  padding: 7px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 9px;
+  color: #fff;
+  background-color: var(--slot-accent);
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease, background-color 0.15s ease;
+}
+
+.slot-action:hover {
+  filter: brightness(1.1);
+  box-shadow: none;
+}
+
+.slot-action:disabled {
+  background-color: var(--border-color);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.slot-action-ghost {
+  color: var(--text-muted);
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+}
+
+.slot-action-ghost:hover {
+  color: #fca5a5;
+  border-color: #ef476f;
+  filter: none;
+}
+
+/* SLOT VAZIO */
+.slot-empty {
+  border-style: dashed;
+  border-color: rgba(100, 116, 139, 0.6);
+  background-color: rgba(2, 6, 23, 0.35);
+  justify-content: center;
+}
+
+.slot-empty.active {
+  border-color: var(--slot-accent);
+}
+
+.slot-empty .slot-icon {
+  font-size: 22px;
+  opacity: 0.5;
+}
+
+.slot-empty-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.slot-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* SLOT BLOQUEADO */
+.slot-locked {
+  background-color: rgba(2, 6, 23, 0.25);
+  border-color: rgba(51, 65, 85, 0.6);
+  opacity: 0.85;
+  justify-content: center;
+}
+
+.slot-locked .slot-icon {
+  font-size: 22px;
+  opacity: 0.55;
+}
+
+.slot-locked .slot-empty-label {
+  color: var(--text-muted);
+}
+
+/* Selo de slot no HUD de equipamento */
+.equip-slot-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background-color: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* ==========================================================
+   MODAL DE ESCOLHA DE SLOT
+   ========================================================== */
+.slot-picker {
+  max-width: 560px;
+  text-align: center;
+}
+
+.slot-picker-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--accent-gold);
+  margin-bottom: 6px;
+}
+
+.slot-picker-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.slot-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  text-align: left;
+  background-color: rgba(2, 6, 23, 0.5);
+  border: 1px solid var(--accent-gold);
+}
+
+.slot-picker-icon {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.slot-picker-item-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.slot-picker-item-info strong {
+  font-size: 15px;
+  color: #fff;
+}
+
+.slot-picker-item-stats {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-green);
+}
+
+.slot-picker-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.slot-picker-option {
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 10px;
+  text-align: center;
+  border-radius: 12px;
+  background-color: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.slot-picker-option:hover {
+  border-color: var(--accent-gold);
+  background-color: rgba(255, 209, 102, 0.08);
+  box-shadow: none;
+  filter: none;
+}
+
+.slot-picker-option.active {
+  border-color: var(--accent-red);
+}
+
+.slot-picker-option.active:hover {
+  border-color: var(--accent-red);
+  background-color: rgba(239, 71, 111, 0.1);
+}
+
+.slot-picker-option-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.slot-picker-option-name {
+  font-size: 12.5px;
+  color: #fff;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.slot-picker-option-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.slot-picker-note {
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }

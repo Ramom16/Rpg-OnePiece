@@ -1,5 +1,8 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Navbar from "../components/Navbar";
+import WorldCard from "../components/WorldCard";
+import EquipmentSlots from "../components/EquipmentSlots";
+import SlotPickerModal from "../components/SlotPickerModal";
 import CombatModal from "../components/CombatModal";
 import RaidModal from "../components/RaidModal";
 import QuizModal from "../components/QuizModal";
@@ -12,12 +15,38 @@ import { ACCESSORIES } from "../data/accessories";
 import { RACES } from "../data/races";
 import { RAIDS } from "../data/raids";
 import { TITLES } from "../data/titles";
+import { getWorldProgress } from "../utils/worldProgress";
+import {
+  MAX_REFINE,
+  MAX_SLOTS,
+  SLOT_UNLOCK_COST,
+  clearSlot,
+  getActiveFruitItem,
+  getActiveWeaponItem,
+  migratePlayerToSlots,
+  normalizeFruitSlots,
+  normalizeWeaponSlots,
+  putItemInSlot,
+  setActiveSlot,
+  storeInFreeSlot,
+  syncLegacyEquipFields,
+  toFruitSlotItem,
+  toWeaponSlotItem,
+  unlockNextSlot,
+  updateActiveItem,
+} from "../utils/equipmentSlots";
 import API from "../services/api";
 
 const MAX_LEVEL = 50;
 const xpToNext = (level) => 100 + level * 20;
 
 const SEA_ORDER = ["Mundo 1", "Mundo 2", "Mundo 3"];
+
+// Condição extra (além do nível) que libera cada mar, exibida no card bloqueado
+const WORLD_LOCK_HINTS = {
+  world2: "Derrote Doflamingo em Dressrosa",
+  world3: "Derrote Kaido em Wano",
+};
 
 // ==================== MENU DE NAVEGAÇÃO (AGRUPADO POR CATEGORIA) ====================
 const NAV_GROUPS = [
@@ -32,6 +61,7 @@ const NAV_GROUPS = [
   {
     label: "⚔️ Equipamento",
     items: [
+      { key: "slots", icon: "🗂️", label: "Slots" },
       { key: "shop", icon: "🛒", label: "Loja de Espadas" },
       { key: "accessories", icon: "💍", label: "Acessórios" },
       { key: "legendary", icon: "🗡️", label: "Armas Lendárias" },
@@ -170,6 +200,9 @@ export default function Game({ player, setPlayer, onLogout }) {
   // ESTADOS DA ROLETA DE RAÇAS
   const [raceRevealKey, setRaceRevealKey] = useState(0);
 
+  // Item novo obtido sem slot livre: aguarda o jogador escolher onde guardar
+  const [pendingItem, setPendingItem] = useState(null);
+
   // AUTO-SAVE SILENCIOSO
   const [savedFlash, setSavedFlash] = useState(false);
   const savedFlashTimerRef = useRef(null);
@@ -201,8 +234,17 @@ export default function Game({ player, setPlayer, onLogout }) {
     showToast(`🎉 Nível ${newLevel} Alcançado!${rollText}`, "success");
   };
 
-  const currentWeapon = WEAPONS.find((w) => w.name === player.weapon_name);
-  const currentFruit = FRUITS.find((f) => f.name === player.fruit_name);
+  // ===== SISTEMA DE SLOTS DE EQUIPAMENTO (ARMAS + AKUMA NO MI) =====
+  // Os slots são normalizados a cada render: saves antigos (weapon_name/fruit_name)
+  // são convertidos sob a demanda e persistidos uma única vez pelo efeito de migração.
+  const weaponSlots = normalizeWeaponSlots(player.weaponSlots, player);
+  const fruitSlots = normalizeFruitSlots(player.fruitSlots, player);
+  const activeWeaponItem = getActiveWeaponItem(weaponSlots);
+  const activeFruitItem = getActiveFruitItem(fruitSlots);
+
+  // Ficha de catálogo do slot ativo (usada nas telas de detalhe: gacha, refinaria, HUD).
+  // Os atributos, porém, vêm do próprio slot — e não do catálogo.
+  const currentFruit = activeFruitItem ? FRUITS.find((f) => f.id === activeFruitItem.id) : null;
   const currentAccessory = ACCESSORIES.find((a) => a.name === player.accessory_name);
   const raceRolls = player.race_rolls ?? 3;
   const currentRace = RACES.find((r) => r.name === player.race) || RACES[0];
@@ -230,15 +272,16 @@ export default function Game({ player, setPlayer, onLogout }) {
   };
 
   // ENHANCE DE ENDGAME: refino de equipamentos, despertar de fruta e treinamento de status
-  const refineWeaponLevel = player.refine_weapon ?? 0;
+  // (refino e despertar agora são POR SLOT — vivem dentro do item guardado)
+  const refineWeaponLevel = activeWeaponItem?.refine ?? 0;
   const refineAccessoryLevel = player.refine_accessory ?? 0;
-  const fruitAwakened = !!player.fruit_awakened;
+  const fruitAwakened = !!activeFruitItem?.isAwakened;
   const trainingAtk = player.training_atk ?? 0;
   const trainingHp = player.training_hp ?? 0;
 
-  const weaponAtk = currentWeapon ? currentWeapon.atk : 0;
-  const fruitAtkBase = currentFruit ? currentFruit.bonusAtk : 0;
-  const fruitHpBase = currentFruit ? currentFruit.bonusHp : 0;
+  const weaponAtk = activeWeaponItem?.atk ?? 0;
+  const fruitAtkBase = activeFruitItem?.atk ?? 0;
+  const fruitHpBase = activeFruitItem?.hp ?? 0;
   const accessoryHpBase = currentAccessory ? currentAccessory.bonusHp : 0;
   const accessoryWeaponBase = currentAccessory ? currentAccessory.weaponAtkBoost : 0;
   const accessoryFruitBase = currentAccessory ? currentAccessory.fruitAtkBoost : 0;
@@ -258,6 +301,14 @@ export default function Game({ player, setPlayer, onLogout }) {
   const baseHp = 100 + player.level * 10 + trainingHp + fruitBonusHp + accessoryBonusHp;
   const totalAtk = Math.floor(baseAtk * currentRace.atkMultiplier);
   const totalHp = Math.floor(baseHp * currentRace.hpMultiplier);
+
+  // HP gravado no save: só a fruta ativa altera a vida, então é ela que entra aqui
+  const hpForSlots = (nextPlayer) => {
+    const nextFruitSlots = normalizeFruitSlots(nextPlayer.fruitSlots, nextPlayer);
+    const fruit = getActiveFruitItem(nextFruitSlots);
+    const fruitHp = fruit ? fruit.hp * (fruit.isAwakened ? 10 : 1) : 0;
+    return Math.floor((100 + nextPlayer.level * 10 + (nextPlayer.training_hp ?? 0) + fruitHp + accessoryBonusHp) * currentRace.hpMultiplier);
+  };
 
   // HAKI: estado normalizado (compatível com saves antigos onde haki era boolean)
   const haki = {
@@ -291,7 +342,9 @@ export default function Game({ player, setPlayer, onLogout }) {
   };
 
   // AUTO-SAVE: grava no localStorage + API em background e mostra o ícone 💾 por 2s
-  const persistPlayer = (nextPlayer) => {
+  const persistPlayer = (rawPlayer) => {
+    // Mantém as colunas legadas de equipamento em sincronia com os slots ativos
+    const nextPlayer = syncLegacyEquipFields(rawPlayer);
     try {
       localStorage.setItem("minirpg_save", JSON.stringify(nextPlayer));
     } catch {
@@ -304,6 +357,96 @@ export default function Game({ player, setPlayer, onLogout }) {
     setSavedFlash(true);
     if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current);
     savedFlashTimerRef.current = setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  // ==========================================================
+  // SLOTS DE EQUIPAMENTO: desbloquear, equipar, guardar item
+  // ==========================================================
+  const slotsField = (kind) => (kind === "weapon" ? "weaponSlots" : "fruitSlots");
+  const itemTerm = (kind) => (kind === "weapon" ? { emoji: "🗡️", noun: "espada" } : { emoji: "🍍", noun: "Akuma no Mi" });
+
+  // Salva o estado dos slots recalculando o HP persistido
+  const saveSlots = (kind, nextSlots) => {
+    const nextPlayer = { ...player, [slotsField(kind)]: nextSlots };
+    nextPlayer.hp = hpForSlots(nextPlayer);
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+  };
+
+  // Compra o próximo slot de armas ou de frutas (50.000 Berries cada)
+  const unlockSlot = (kind) => {
+    const { noun } = itemTerm(kind);
+    const current = kind === "weapon" ? weaponSlots : fruitSlots;
+    if (current.maxUnlocked >= MAX_SLOTS) {
+      showToast(`Você já liberou todos os ${MAX_SLOTS} slots de ${noun}!`, "info");
+      return;
+    }
+    if (player.berries < SLOT_UNLOCK_COST) {
+      showToast(`Berries insuficientes! Desbloquear um slot custa ${SLOT_UNLOCK_COST.toLocaleString()} Berries.`, "warning");
+      return;
+    }
+    const nextPlayer = { ...player, berries: player.berries - SLOT_UNLOCK_COST, [slotsField(kind)]: unlockNextSlot(current) };
+    setPlayer(nextPlayer);
+    persistPlayer(nextPlayer);
+    showToast(`🔓 Slot ${current.maxUnlocked + 1} de ${noun} desbloqueado!`, "success");
+  };
+
+  // Equipa o item guardado em um slot desbloqueado e ocupado
+  const equipSlot = (kind, index) => {
+    const { emoji, noun } = itemTerm(kind);
+    const current = kind === "weapon" ? weaponSlots : fruitSlots;
+    if (index >= current.maxUnlocked) {
+      showToast("🔒 Desbloqueie este slot antes de equipar.", "warning");
+      return;
+    }
+    if (!current.items[index]) {
+      showToast(`Este slot está vazio — obtenha uma ${noun} na loja ou na roleta.`, "warning");
+      return;
+    }
+    if (current.activeSlotIndex === index) return;
+    saveSlots(kind, setActiveSlot(current, index));
+    showToast(`${emoji} ${current.items[index].name} equipada! (Slot ${index + 1})`, "success");
+  };
+
+  // Desequipa o item do slot informado (os atributos do slot saem do cálculo)
+  const unequipSlot = (kind, index) => {
+    const { emoji } = itemTerm(kind);
+    const current = kind === "weapon" ? weaponSlots : fruitSlots;
+    if (!current.items[index]) return;
+    const itemName = current.items[index].name;
+    saveSlots(kind, clearSlot(current, index));
+    showToast(`${emoji} ${itemName} foi desequipada — o Slot ${index + 1} ficou vazio.`, "info");
+  };
+
+  // Guarda um item no slot indicado e passa a usá-lo como equipamento ativo
+  const storeItemInSlot = (kind, index, item) => {
+    const { emoji } = itemTerm(kind);
+    const current = kind === "weapon" ? weaponSlots : fruitSlots;
+    const replaced = current.items[index];
+    saveSlots(kind, putItemInSlot(current, index, item));
+    if (replaced) {
+      showToast(`${emoji} ${item.name} guardada no Slot ${index + 1} (substituiu ${replaced.name}).`, "success");
+    } else {
+      showToast(`${emoji} ${item.name} guardada no Slot ${index + 1} e equipada!`, "success");
+    }
+  };
+
+  // Fluxo de obtenção de item já resolvido em um único estado do jogador
+  // (usado por loja/gacha/vitória): devolve os slots com o item guardado ou
+  // null quando todos os slots desbloqueados estão ocupados.
+  const prepareItemStorage = (kind, item) => {
+    const current = kind === "weapon" ? weaponSlots : fruitSlots;
+    const nextSlots = storeInFreeSlot(current, item);
+    if (nextSlots) return { slots: nextSlots, pending: false };
+    return { slots: current, pending: true };
+  };
+
+  // Item novo ainda sem destino: o jogador precisa escolher o slot
+  const handlePendingSlotSelect = (index) => {
+    if (!pendingItem) return;
+    const { kind, item } = pendingItem;
+    setPendingItem(null);
+    storeItemInSlot(kind, index, item);
   };
 
   const startQuest = (island, quest) => {
@@ -329,15 +472,22 @@ export default function Game({ player, setPlayer, onLogout }) {
     let newXp = player.xp + (enemy.rewardXp || 100);
     let newLevel = player.level;
     let newBounty = player.bounty + (enemy.rewardBerries ? enemy.rewardBerries * 2 : 5000);
-    let newWeapon = player.weapon_name;
+    let newWeaponSlots = weaponSlots;
     let newFruitRolls = player.fruit_rolls;
     let newWorldProgress = player.world_progress || 1;
 
+    // Recompensa de arma lendária: entra em um slot livre; se todos estiverem
+    // ocupados, o jogador escolhe qual item substituir logo após a vitória.
     if (enemy.weaponReward) {
-      const rewardWeaponObj = WEAPONS.find((w) => w.id === enemy.weaponReward);
-      if (rewardWeaponObj) {
-        newWeapon = rewardWeaponObj.name;
-        showToast(`🏆 Você obteve a lendária espada: ${rewardWeaponObj.name}!`, "success");
+      const rewardWeapon = WEAPONS.find((w) => w.id === enemy.weaponReward);
+      if (rewardWeapon) {
+        const rewardItem = toWeaponSlotItem(rewardWeapon);
+        const storage = prepareItemStorage("weapon", rewardItem);
+        newWeaponSlots = storage.slots;
+        if (storage.pending) {
+          setPendingItem({ kind: "weapon", item: rewardItem });
+        }
+        showToast(`🏆 Você obteve a lendária espada: ${rewardWeapon.name}!`, "success");
       }
     }
 
@@ -371,10 +521,11 @@ export default function Game({ player, setPlayer, onLogout }) {
       xp: newXp,
       berries: newBerries,
       bounty: newBounty,
-      weapon_name: newWeapon,
+      weaponSlots: newWeaponSlots,
       fruit_rolls: newFruitRolls,
       world_progress: newWorldProgress,
     };
+    nextPlayer.hp = hpForSlots(nextPlayer);
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
   };
@@ -387,12 +538,17 @@ export default function Game({ player, setPlayer, onLogout }) {
     const nextPlayer = {
       ...player,
       berries: player.berries - weapon.price,
-      weapon_name: weapon.name,
-      refine_weapon: 0,
+      weaponSlots,
     };
+    // A espada comprada ocupa um slot livre; se não houver, o jogador escolhe qual substituir
+    const boughtItem = toWeaponSlotItem(weapon);
+    const storage = prepareItemStorage("weapon", boughtItem);
+    nextPlayer.weaponSlots = storage.slots;
+    nextPlayer.hp = hpForSlots(nextPlayer);
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
-    showToast(`Você comprou e equipou a espada ${weapon.name}!`, "success");
+    if (storage.pending) setPendingItem({ kind: "weapon", item: boughtItem });
+    showToast(`🛒 Você comprou a espada ${weapon.name}!`, "success");
   };
 
   const triggerConfetti = () => {
@@ -408,16 +564,21 @@ export default function Game({ player, setPlayer, onLogout }) {
     }
 
     const rolledFruit = pickRandomFruit(luckMultiplier);
+    const rolledItem = toFruitSlotItem(rolledFruit);
+
+    // A fruta obtida ocupa um slot livre; se não houver, o jogador escolhe qual substituir
+    const storage = prepareItemStorage("fruit", rolledItem);
 
     const nextPlayer = {
       ...player,
       fruit_rolls: player.fruit_rolls - 1,
-      fruit_name: rolledFruit.name,
-      fruit_awakened: false,
-      hp: Math.floor((100 + player.level * 10 + rolledFruit.bonusHp + accessoryBonusHp) * currentRace.hpMultiplier),
+      fruitSlots: storage.slots,
     };
+    nextPlayer.hp = hpForSlots(nextPlayer);
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
+
+    if (storage.pending) setPendingItem({ kind: "fruit", item: rolledItem });
 
     setGachaAnimKey((k) => k + 1);
 
@@ -433,8 +594,8 @@ export default function Game({ player, setPlayer, onLogout }) {
       return;
     }
 
-    const equipped = FRUITS.find((f) => f.name === player.fruit_name);
-    if (equipped && equipped.rarity === "Lendária") {
+    // Aviso antes de trocar a fruta lendária que está sendo usada
+    if (currentFruit && currentFruit.rarity === "Lendária") {
       setConfirmReroll(true);
       return;
     }
@@ -479,14 +640,14 @@ export default function Game({ player, setPlayer, onLogout }) {
     showToast(`✨ ${label} despertado! Seu poder de vontade fortalecerá seu combate.`, "info");
   };
 
-  // ⛏️ REFINAR ESPADA EQUIPADA (+1 a +10, cada nível = +15% do ATK base)
+  // ⛏️ REFINAR ESPADA DO SLOT ATIVO (+1 a +10, cada nível = +15% do ATK base)
   const refineWeapon = () => {
-    if (!currentWeapon) {
+    if (!activeWeaponItem) {
       showToast("Nenhuma espada equipada para refinar!", "warning");
       return;
     }
-    if (refineWeaponLevel >= 10) {
-      showToast("Sua espada já está no nível máximo +10!", "info");
+    if (refineWeaponLevel >= MAX_REFINE) {
+      showToast(`Sua espada já está no nível máximo +${MAX_REFINE}!`, "info");
       return;
     }
     const cost = (refineWeaponLevel + 1) * 50000;
@@ -494,14 +655,9 @@ export default function Game({ player, setPlayer, onLogout }) {
       showToast(`Berries insuficientes! Refinar para +${refineWeaponLevel + 1} custa ${cost.toLocaleString()} Berries.`, "warning");
       return;
     }
-    const nextPlayer = {
-      ...player,
-      berries: player.berries - cost,
-      refine_weapon: refineWeaponLevel + 1,
-    };
-    setPlayer(nextPlayer);
-    persistPlayer(nextPlayer);
-    showToast(`⛏️ ${currentWeapon.name} refinada para +${refineWeaponLevel + 1}! (ATK agora +${Math.round(weaponAtk * (1 + (refineWeaponLevel + 1) * 0.15))})`, "success");
+    const nextLevel = refineWeaponLevel + 1;
+    saveSlots("weapon", updateActiveItem(weaponSlots, { refine: nextLevel }));
+    showToast(`⛏️ ${activeWeaponItem.name} refinada para +${nextLevel}! (ATK agora +${Math.round(weaponAtk * (1 + nextLevel * 0.15))})`, "success");
   };
 
   // ⛏️ REFINAR ACESSÓRIO EQUIPADO (+1 a +10, cada nível = +15% dos atributos base)
@@ -532,14 +688,14 @@ export default function Game({ player, setPlayer, onLogout }) {
     showToast(`⛏️ ${currentAccessory.name} refinado para +${refineAccessoryLevel + 1}! (Bônus +15% adicionais)`, "success");
   };
 
-  // ⚡ DESPERTAR AKUMA NO MI (Nível 40+ e 500.000 Berries → bônus ×10)
+  // ⚡ DESPERTAR AKUMA NO MI DO SLOT ATIVO (Nível 40+ e 500.000 Berries → bônus ×10)
   const awakenFruit = () => {
-    if (!currentFruit) {
+    if (!activeFruitItem) {
       showToast("Você precisa estar com uma Akuma no Mi equipada!", "warning");
       return;
     }
     if (fruitAwakened) {
-      showToast(`${currentFruit.name} já está despertada!`, "warning");
+      showToast(`${activeFruitItem.name} já está despertada!`, "warning");
       return;
     }
     if (player.level < 40) {
@@ -553,13 +709,13 @@ export default function Game({ player, setPlayer, onLogout }) {
     const nextPlayer = {
       ...player,
       berries: player.berries - 500000,
-      fruit_awakened: true,
-      hp: Math.floor((100 + player.level * 10 + trainingHp + fruitHpBase * 10 + accessoryBonusHp) * currentRace.hpMultiplier),
+      fruitSlots: updateActiveItem(fruitSlots, { isAwakened: true }),
     };
+    nextPlayer.hp = hpForSlots(nextPlayer);
     setPlayer(nextPlayer);
     persistPlayer(nextPlayer);
     triggerConfetti();
-    showToast(`✨ ${currentFruit.name} despertada! Bônus de ATK e HP multiplicados por 10.`, "success");
+    showToast(`✨ ${activeFruitItem.name} despertada! Bônus de ATK e HP multiplicados por 10.`, "success");
   };
 
   // 💪 TREINAR FORÇA: +100 ATK Base permanente (30.000 Berries)
@@ -690,20 +846,22 @@ export default function Game({ player, setPlayer, onLogout }) {
     );
   };
 
+  // MIGAÇÃO ÚNICA: saves antigos (weapon_name / fruit_name) viram slots e são
+  // gravados uma vez, para que o sistema de slots persista no banco do jogador.
+  useEffect(() => {
+    const migrated = migratePlayerToSlots(player);
+    if (migrated !== player) {
+      setPlayer(migrated);
+      persistPlayer(migrated);
+    }
+    // Executa apenas na montagem: o save já migrado volta normalizado do backend
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const activeWorldData = WORLDS[activeWorld];
 
   // ==== BARRA DE PROGRESSO DA JORNADA (MUNDO ATUAL) ====
-  const reachableCount = activeWorldData.islands.filter((i) => player.level >= i.minLevel).length;
-  const activeIslandIdx = Math.max(0, reachableCount - 1);
-  const activeIsland = activeWorldData.islands[activeIslandIdx];
-  const nextIsland = activeWorldData.islands[activeIslandIdx + 1];
-  let islandFraction = 1;
-  if (nextIsland && nextIsland.minLevel > activeIsland.minLevel) {
-    islandFraction = Math.min(1, Math.max(0, (player.level - activeIsland.minLevel) / (nextIsland.minLevel - activeIsland.minLevel)));
-  }
-  const islandProgress = activeIslandIdx + islandFraction;
-  const worldPct = Math.round((islandProgress / activeWorldData.islands.length) * 100);
-  const missionIdx = Math.min(3, Math.floor(islandFraction * 3) + 1);
+  const { activeIslandIdx, activeIsland, missionIdx, percent: worldPct } = getWorldProgress(activeWorldData, player.level);
 
   return (
     <div className="game-page" style={{ minHeight: "100vh" }}>
@@ -746,8 +904,11 @@ export default function Game({ player, setPlayer, onLogout }) {
                 <span className="equip-icon">⚔️</span>
                 <div className="equip-info">
                   <span className="equip-name">
-                    {currentWeapon ? currentWeapon.name : "Nenhuma espada"}
+                    {activeWeaponItem ? activeWeaponItem.name : "Nenhuma espada"}
                     {refineWeaponLevel > 0 ? <span className="equip-refine">+{refineWeaponLevel}</span> : ""}
+                    <span className="equip-slot-tag">
+                      Slot {weaponSlots.activeSlotIndex + 1}/{weaponSlots.maxUnlocked}
+                    </span>
                   </span>
                   <span className="equip-sub">Bônus de ATK</span>
                 </div>
@@ -767,8 +928,11 @@ export default function Game({ player, setPlayer, onLogout }) {
                 )}
                 <div className="equip-info">
                   <span className="equip-name">
-                    {currentFruit ? currentFruit.name : "Nenhuma fruta"}
+                    {activeFruitItem ? activeFruitItem.name : "Nenhuma fruta"}
                     {fruitAwakened && <span className="tag-awakened">✨ Despertada</span>}
+                    <span className="equip-slot-tag">
+                      Slot {fruitSlots.activeSlotIndex + 1}/{fruitSlots.maxUnlocked}
+                    </span>
                   </span>
                   <span className="equip-sub">
                     +{Math.round(fruitAtk)} ATK · +{Math.round(fruitBonusHp)} HP
@@ -860,30 +1024,29 @@ export default function Game({ player, setPlayer, onLogout }) {
         {/* =================== EXPLORAR MARES (MUNDOS + ILHAS) =================== */}
         {activeTab === "story" && (
           <div>
-            <h3 style={{ marginBottom: "15px" }}>🗺️ Escolha o seu Mar e navegue entre as ilhas</h3>
+            <div className="section-header">
+              <h3 className="section-title">
+                <span aria-hidden="true">🗺️</span> Escolha o seu Mar e navegue entre as ilhas
+              </h3>
+              <p className="section-subtitle">
+                Selecione a região para explorar novas ilhas, caças e missões disponíveis.
+              </p>
+            </div>
 
-            <div className="world-selector">
+            <div className="world-grid">
               {WORLDS.map((world, idx) => {
-                const locked = !canAccessWorld(idx);
+                const isLocked = !canAccessWorld(idx);
                 return (
-                  <button
+                  <WorldCard
                     key={world.id}
-                    className={`world-card ${activeWorld === idx ? "active" : ""} ${locked ? "locked" : ""}`}
-                    onClick={() => selectWorld(idx)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <strong>{world.name}</strong>
-                      <span>·</span>
-                      <span>{world.subtitle}</span>
-                      {locked && <span>🔒</span>}
-                    </div>
-                    <small style={{ opacity: 0.75 }}>{world.levels}</small>
-                    {locked && (
-                      <small style={{ display: "block", marginTop: "6px", color: "var(--accent-gold)" }}>
-                        {world.id === "world2" ? "Requer Nível 15 + derrotar Doflamingo" : "Requer Nível 30 + derrotar Kaido"}
-                      </small>
-                    )}
-                  </button>
+                    world={world}
+                    index={idx}
+                    isActive={activeWorld === idx}
+                    isLocked={isLocked}
+                    progress={isLocked ? 0 : getWorldProgress(world, player.level).percent}
+                    lockHint={WORLD_LOCK_HINTS[world.id]}
+                    onSelect={selectWorld}
+                  />
                 );
               })}
             </div>
@@ -991,6 +1154,30 @@ export default function Game({ player, setPlayer, onLogout }) {
           </div>
         )}
 
+        {/* =================== SLOTS DE ARMAS E AKUMA NO MI =================== */}
+        {activeTab === "slots" && (
+          <div>
+            <div className="section-header">
+              <h3 className="section-title">
+                <span aria-hidden="true">🗂️</span> Slots de Equipamento
+              </h3>
+              <p className="section-subtitle">
+                Guarde até {MAX_SLOTS} espadas e {MAX_SLOTS} Akuma no Mi e escolha qual está equipada a qualquer momento. Só o item do slot
+                equipado soma ATK e HP ao personagem.
+              </p>
+            </div>
+
+            <EquipmentSlots
+              weaponSlots={weaponSlots}
+              fruitSlots={fruitSlots}
+              berries={player.berries}
+              onEquip={equipSlot}
+              onUnequip={unequipSlot}
+              onUnlock={unlockSlot}
+            />
+          </div>
+        )}
+
         {/* =================== LOJA DE ESPADAS (POR MAR) =================== */}
         {activeTab === "shop" && (
           <div>
@@ -1000,17 +1187,17 @@ export default function Game({ player, setPlayer, onLogout }) {
             <div style={{ marginBottom: "25px", padding: "16px", border: "1px solid var(--border-color)", borderRadius: "12px", backgroundColor: "var(--bg-card)" }}>
               <h4 style={{ marginBottom: "4px", color: "var(--accent-gold)" }}>⛏️ Refinaria de Equipamentos</h4>
               <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
-                Cada nível de refino (+1 a +10) concede <strong>+15%</strong> dos atributos base do item (no +10, o item dá +150% de status). Custo: <strong>Nível × 50.000 Berries</strong>.
+                Cada nível de refino (+1 a +10) concede <strong>+15%</strong> dos atributos base do item (no +10, o item dá +150% de status). Custo: <strong>Nível × 50.000 Berries</strong>. O refino acompanha o slot: cada espada guarda o seu próprio nível.
               </p>
               <div className="shop-grid">
                 <div className="card">
-                  <h4>⚔️ Refinar Espada: {currentWeapon ? currentWeapon.name : "Nenhuma"}</h4>
-                  {currentWeapon ? (
+                  <h4>⚔️ Refinar Espada: {activeWeaponItem ? activeWeaponItem.name : "Nenhuma"}</h4>
+                  {activeWeaponItem ? (
                     <>
                       <p style={{ fontSize: "13px", color: "var(--accent-green)" }}>
                         ATK base: +{weaponAtk} → Refinado: +{Math.round(boostedWeaponAtk)} ({refineWeaponLevel}/10)
                       </p>
-                      {refineWeaponLevel < 10 ? (
+                      {refineWeaponLevel < MAX_REFINE ? (
                         <>
                           <p style={{ fontSize: "13px", color: "var(--accent-gold)", fontWeight: "bold" }}>
                             Custo: 💰 {((refineWeaponLevel + 1) * 50000).toLocaleString()} Berries
@@ -1023,7 +1210,7 @@ export default function Game({ player, setPlayer, onLogout }) {
                           </button>
                         </>
                       ) : (
-                        <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: 0 }}>✔ Nível máximo +10 alcançado!</p>
+                        <p style={{ color: "var(--accent-green)", fontWeight: "bold", margin: 0 }}>✔ Nível máximo +{MAX_REFINE} alcançado!</p>
                       )}
                     </>
                   ) : (
@@ -1400,23 +1587,26 @@ export default function Game({ player, setPlayer, onLogout }) {
               Obtenha frutos lendários com foto, descrição e bônus de atributos!
             </p>
 
-            {currentFruit ? (
+            {activeFruitItem ? (
               <div key={gachaAnimKey} className="card card-legendary fruit-reveal" style={{ maxWidth: "360px", margin: "25px auto", textAlign: "center" }}>
                 <FruitImage
-                  src={currentFruit.image}
-                  alt={currentFruit.name}
-                  fallback={currentFruit.icon}
+                  src={currentFruit?.image}
+                  alt={activeFruitItem.name}
+                  fallback={currentFruit?.icon}
                   size={130}
                   style={{ marginBottom: "10px" }}
                 />
-                <h4 style={{ fontSize: "18px" }}>{currentFruit.name}</h4>
+                <h4 style={{ fontSize: "18px" }}>{activeFruitItem.name}</h4>
                 <div style={{ margin: "8px 0" }}>
-                  <span className={`badge badge-${currentFruit.rarity.toLowerCase()}`}>
-                    {currentFruit.type} - {currentFruit.rarity}
+                  <span className={`badge badge-${(currentFruit?.rarity || "comum").toLowerCase()}`}>
+                    {currentFruit ? `${currentFruit.type} - ${currentFruit.rarity}` : "Akuma no Mi"}
+                  </span>
+                  <span className="slot-tag" style={{ marginLeft: "6px" }}>
+                    Slot {fruitSlots.activeSlotIndex + 1}/{fruitSlots.maxUnlocked}
                   </span>
                 </div>
                 <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "10px 0", lineHeight: "1.4" }}>
-                  {currentFruit.description}
+                  {currentFruit?.description || "Fruta guardada em um dos seus slots."}
                 </p>
                 <div style={{ color: "var(--accent-green)", fontWeight: "bold", fontSize: "14px" }}>
                   +{Math.round(fruitAtk)} ATK | +{Math.round(fruitBonusHp)} HP{fruitAwakened && " ✨(Despertada ×10)"}
@@ -1446,7 +1636,7 @@ export default function Game({ player, setPlayer, onLogout }) {
               </div>
             ) : (
               <div className="card" style={{ maxWidth: "360px", margin: "25px auto" }}>
-                <p style={{ color: "var(--text-muted)" }}>Você ainda não ingeriu nenhuma Akuma no Mi.</p>
+                <p style={{ color: "var(--text-muted)" }}>Você ainda não possui nenhuma Akuma no Mi. Gire a roleta para obter a primeira!</p>
               </div>
             )}
 
@@ -1568,8 +1758,8 @@ export default function Game({ player, setPlayer, onLogout }) {
           <div className="card card-legendary" style={{ maxWidth: "430px", width: "90%", textAlign: "center", padding: "25px" }}>
             <h3 style={{ color: "var(--accent-gold)" }}>⚠️ Girar novamente?</h3>
             <p style={{ color: "var(--text-muted)", lineHeight: "1.5", margin: "12px 0" }}>
-              Você já tem uma Akuma no Mi Lendária equipada (<strong>{currentFruit.name}</strong>)! Tem certeza de que deseja girar
-              novamente e arriscar perdê-la?
+              Você já tem uma Akuma no Mi Lendária equipada (<strong>{activeFruitItem?.name}</strong>, Slot {fruitSlots.activeSlotIndex + 1})! Tem certeza de que deseja girar
+              novamente e arriscar perdê-la? A fruta será guardada em outro slot ou substituirá a atual.
             </p>
             <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
               <button onClick={() => setConfirmReroll(false)} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", color: "var(--text-muted)" }}>
@@ -1587,6 +1777,16 @@ export default function Game({ player, setPlayer, onLogout }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL DE ESCOLHA DE SLOT (item novo obtido com todos os slots ocupados) */}
+      {pendingItem && (
+        <SlotPickerModal
+          kind={pendingItem.kind}
+          item={pendingItem.item}
+          slots={pendingItem.kind === "weapon" ? weaponSlots : fruitSlots}
+          onSelect={handlePendingSlotSelect}
+        />
       )}
 
       {/* CONFETES DE CELEBRAÇÃO PARA FRUTAS LENDÁRIAS */}

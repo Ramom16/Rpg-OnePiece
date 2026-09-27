@@ -82,7 +82,7 @@ export async function login(req, res) {
 // SALVAR PROGRESSO (Protegido por JWT)
 export async function saveGame(req, res) {
     const playerId = req.user.id;
-    const { level, xp, hp, bounty, berries, fruit_name, weapon_name, accessory_name, haki, fruit_rolls, race, race_rolls, refine_weapon, refine_accessory, fruit_awakened, training_atk, training_hp, world_progress, nickname, unlocked_titles, equipped_title } = req.body;
+    const { level, xp, hp, bounty, berries, fruit_name, weapon_name, accessory_name, weaponSlots, fruitSlots, haki, fruit_rolls, race, race_rolls, refine_weapon, refine_accessory, fruit_awakened, training_atk, training_hp, world_progress, nickname, unlocked_titles, equipped_title } = req.body;
 
     try {
         const updatedPlayer = await prisma.player.update({
@@ -96,6 +96,8 @@ export async function saveGame(req, res) {
                 fruit_name,
                 weapon_name,
                 accessory_name,
+                weaponSlots: weaponSlots !== undefined ? weaponSlots : undefined,
+                fruitSlots: fruitSlots !== undefined ? fruitSlots : undefined,
                 haki: haki !== undefined ? haki : undefined,
                 race,
                 race_rolls,

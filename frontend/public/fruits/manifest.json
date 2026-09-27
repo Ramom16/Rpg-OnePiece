@@ -1,0 +1,162 @@
+[
+  {
+    "id": "sube",
+    "file": "sube.webp",
+    "path": "/fruits/sube.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/e/e9/Sube_Sube_no_Mi_Infobox.png/revision/latest?cb=20250826143841",
+    "bytes": 34466,
+    "type": "image/webp"
+  },
+  {
+    "id": "bara",
+    "file": "bara.webp",
+    "path": "/fruits/bara.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/9/9c/Bara_Bara_no_Mi_Infobox.png/revision/latest?cb=20240421082610",
+    "bytes": 11740,
+    "type": "image/webp"
+  },
+  {
+    "id": "hira",
+    "file": "hira.webp",
+    "path": "/fruits/hira.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/5/5a/Hira_Hira_no_Mi_Infobox.png/revision/latest?cb=20151110020239",
+    "bytes": 22186,
+    "type": "image/webp"
+  },
+  {
+    "id": "ito",
+    "file": "ito.webp",
+    "path": "/fruits/ito.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/a/ae/Ito_Ito_no_Mi_Infobox.png/revision/latest?cb=20151220070449",
+    "bytes": 16274,
+    "type": "image/webp"
+  },
+  {
+    "id": "mochi",
+    "file": "mochi.webp",
+    "path": "/fruits/mochi.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/2/2c/Mochi_Mochi_no_Mi_Infobox.png/revision/latest?cb=20250826143835",
+    "bytes": 46454,
+    "type": "image/webp"
+  },
+  {
+    "id": "gura",
+    "file": "gura.webp",
+    "path": "/fruits/gura.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/e/e3/Gura_Gura_no_Mi_Infobox.png/revision/latest?cb=20251002184350",
+    "bytes": 65030,
+    "type": "image/webp"
+  },
+  {
+    "id": "ope",
+    "file": "ope.webp",
+    "path": "/fruits/ope.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/0/0e/Ope_Ope_no_Mi_Infobox.png/revision/latest?cb=20210409181034",
+    "bytes": 15588,
+    "type": "image/webp"
+  },
+  {
+    "id": "nika",
+    "file": "nika.webp",
+    "path": "/fruits/nika.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/1/12/Gomu_Gomu_no_Mi_Infobox.png/revision/latest?cb=20221108072550",
+    "bytes": 18516,
+    "type": "image/webp"
+  },
+  {
+    "id": "moku",
+    "file": "moku.webp",
+    "path": "/fruits/moku.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/8/8d/Moku_Moku_no_Mi_Infobox.png/revision/latest?cb=20250826143852",
+    "bytes": 35136,
+    "type": "image/webp"
+  },
+  {
+    "id": "suna",
+    "file": "suna.webp",
+    "path": "/fruits/suna.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/7/7d/Suna_Suna_no_Mi_Infobox.png/revision/latest?cb=20220408131752",
+    "bytes": 44672,
+    "type": "image/webp"
+  },
+  {
+    "id": "mera",
+    "file": "mera.webp",
+    "path": "/fruits/mera.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/8/8c/Mera_Mera_no_Mi_Infobox.png/revision/latest?cb=20240710204632",
+    "bytes": 28666,
+    "type": "image/webp"
+  },
+  {
+    "id": "hie",
+    "file": "hie.webp",
+    "path": "/fruits/hie.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/5/56/Hie_Hie_no_Mi_Infobox.png/revision/latest?cb=20221101155813",
+    "bytes": 11008,
+    "type": "image/webp"
+  },
+  {
+    "id": "magu",
+    "file": "magu.webp",
+    "path": "/fruits/magu.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/0/07/Magu_Magu_no_Mi_Infobox.png/revision/latest?cb=20231013044624",
+    "bytes": 19336,
+    "type": "image/webp"
+  },
+  {
+    "id": "goro",
+    "file": "goro.webp",
+    "path": "/fruits/goro.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/d/d2/Goro_Goro_no_Mi_Infobox.png/revision/latest?cb=20230907005154",
+    "bytes": 32834,
+    "type": "image/webp"
+  },
+  {
+    "id": "pika",
+    "file": "pika.webp",
+    "path": "/fruits/pika.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/6/66/Pika_Pika_no_Mi_Infobox.png/revision/latest?cb=20250501014523",
+    "bytes": 11672,
+    "type": "image/webp"
+  },
+  {
+    "id": "yami",
+    "file": "yami.webp",
+    "path": "/fruits/yami.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/f/f5/Yami_Yami_no_Mi_Infobox.png/revision/latest?cb=20240627010252",
+    "bytes": 11034,
+    "type": "image/webp"
+  },
+  {
+    "id": "ushi",
+    "file": "ushi.webp",
+    "path": "/fruits/ushi.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/b/bf/Ushi_Ushi_no_Mi%2C_Model_Bison_Infobox.png/revision/latest?cb=20220408131623",
+    "bytes": 28970,
+    "type": "image/webp"
+  },
+  {
+    "id": "neko",
+    "file": "neko.webp",
+    "path": "/fruits/neko.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/9/98/Neko_Neko_no_Mi%2C_Model_Leopard_Infobox.png/revision/latest?cb=20230306213909",
+    "bytes": 35324,
+    "type": "image/webp"
+  },
+  {
+    "id": "tori",
+    "file": "tori.webp",
+    "path": "/fruits/tori.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/5/51/Tori_Tori_no_Mi%2C_Model_Phoenix_Infobox.png/revision/latest?cb=20251002184357",
+    "bytes": 53532,
+    "type": "image/webp"
+  },
+  {
+    "id": "uo",
+    "file": "uo.webp",
+    "path": "/fruits/uo.webp",
+    "source": "https://static.wikia.nocookie.net/onepiece/images/f/f9/Uo_Uo_no_Mi%2C_Model_Seiryu_Infobox.png/revision/latest?cb=20211204205430",
+    "bytes": 55306,
+    "type": "image/webp"
+  }
+]
