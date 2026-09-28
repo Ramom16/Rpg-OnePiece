@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "db:push:force": "prisma db push --accept-data-loss",
+    "db:status": "prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-url \"mysql://root:1234@localhost:3306/minirpgonepiece\" --exit-code"
   },
   "keywords": [],
   "author": "",
