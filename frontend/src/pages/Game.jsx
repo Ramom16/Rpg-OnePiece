@@ -289,6 +289,7 @@ export default function Game({ player, setPlayer, onLogout }) {
 
   // ESTADOS DA ROLETA DE RAÇAS
   const [raceRevealKey, setRaceRevealKey] = useState(0);
+  const [confirmRaceReroll, setConfirmRaceReroll] = useState(false);
 
   // Item novo obtido sem slot livre: aguarda o jogador escolher onde guardar
   const [pendingItem, setPendingItem] = useState(null);
@@ -338,6 +339,8 @@ export default function Game({ player, setPlayer, onLogout }) {
   const currentAccessory = ACCESSORIES.find((a) => a.name === player.accessory_name);
   const raceRolls = player.race_rolls ?? 3;
   const currentRace = RACES.find((r) => r.name === player.race) || RACES[0];
+  // Sem fallback para RACES[0]: uma raça padrão nunca deve bloquear o giro do jogador
+  const isLegendaryRaceEquipped = RACES.find((r) => r.name === player.race)?.rarity === "Lendária";
   const avatarIcon = currentRace.icon || "🏴‍☠️";
 
   // ===== SISTEMA DE TÍTULOS (bônus de sorte nos gachas) =====
@@ -876,6 +879,16 @@ export default function Game({ player, setPlayer, onLogout }) {
 
     setMessage(rolledRace.name === "Humano" ? "🫥 Você sorteou Humano... que azar!" : `🎲 Nova raça: ${rolledRace.icon} ${rolledRace.name}!`);
     setTimeout(() => setMessage(""), 3500);
+  };
+
+  const handleSpinRaceClick = () => {
+    // Aviso antes de trocar a raça lendária que está sendo usada
+    if (isLegendaryRaceEquipped) {
+      setConfirmRaceReroll(true);
+      return;
+    }
+
+    doRollRace();
   };
 
   // INICIAR RAID
@@ -1575,7 +1588,7 @@ export default function Game({ player, setPlayer, onLogout }) {
               )}
               <RarityOdds rates={raceRates} />
               <button
-                onClick={doRollRace}
+                onClick={handleSpinRaceClick}
                 style={{
                   padding: "14px 28px",
                   fontSize: "16px",
@@ -1866,6 +1879,32 @@ export default function Game({ player, setPlayer, onLogout }) {
                 style={{ backgroundColor: "var(--accent-gold)", color: "#000" }}
               >
                 Sim, girar roleta!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO AO GIRAR COM RAÇA LENDÁRIA EQUIPADA */}
+      {confirmRaceReroll && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 }}>
+          <div className="card card-legendary" style={{ maxWidth: "430px", width: "90%", textAlign: "center", padding: "25px" }}>
+            <h3 style={{ color: "var(--accent-gold)" }}>⚠️ Atenção: Raça Lendária Equipada!</h3>
+            <p style={{ color: "var(--text-muted)", lineHeight: "1.5", margin: "12px 0" }}>
+              Você atualmente possui a raça lendária <strong>{currentRace.name}</strong>. Tem certeza de que deseja girar a roleta e arriscar perdê-la?
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+              <button onClick={() => setConfirmRaceReroll(false)} style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-color)", color: "var(--text-muted)" }}>
+                Cancelar / Manter Raça
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmRaceReroll(false);
+                  doRollRace();
+                }}
+                style={{ backgroundColor: "var(--accent-gold)", color: "#000" }}
+              >
+                Confirmar e Girar
               </button>
             </div>
           </div>

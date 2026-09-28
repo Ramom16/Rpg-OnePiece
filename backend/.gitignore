@@ -1,1 +1,5 @@
 node_modules/
+
+# Variáveis de ambiente (contêm segredos e credenciais do banco)
+.env
+!.env.example
